@@ -23,4 +23,6 @@ navapi patch customers <id> --set blocked=All     # ETags handled for you
 navapi delete salesOrders <id> --yes
 ```
 
-Humans on a TTY get tables; pipes and `--json` get stable JSON. Secrets live outside the profile file (`NAVAPI_CLIENT_SECRET` env var also works, e.g. in CI).
+Humans on a TTY get tables; pipes and `--json` get stable JSON.
+
+Secrets go to the **OS keychain** when available (file fallback otherwise; `NAVAPI_CLIENT_SECRET` env var covers CI). `navapi secrets status` shows where each profile's secret lives; `navapi secrets migrate` moves any plaintext leftovers into the keychain.

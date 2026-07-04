@@ -3,9 +3,9 @@ import {
   type BcRecord,
   ClientCredentialsAuth,
   defaultConfigDir,
-  FileSecretStore,
   type ProfileConfig,
   ProfileStore,
+  resolveSecretStore,
 } from '@navapi/core';
 import * as vscode from 'vscode';
 import { saveCompanies } from './companies-cache.js';
@@ -105,7 +105,8 @@ export class ProfileFormPanel {
   private async resolveSecret(values: ProfileFormValues): Promise<string | undefined> {
     if (values.clientSecret) return values.clientSecret;
     if (this.mode === 'edit' && this.originalName) {
-      return new FileSecretStore(defaultConfigDir()).get(this.originalName);
+      const { store } = await resolveSecretStore(defaultConfigDir());
+      return store.get(this.originalName);
     }
     return undefined;
   }
@@ -154,7 +155,7 @@ export class ProfileFormPanel {
         company: values.company || undefined,
         baseUrl: values.baseUrl || undefined,
       });
-      await new FileSecretStore(dir).set(name, secret);
+      await (await resolveSecretStore(dir)).store.set(name, secret);
       // A successful test already fetched companies; cache them for the tree.
       try {
         await saveCompanies(name, await testConnection(values, secret));

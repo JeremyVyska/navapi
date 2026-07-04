@@ -75,7 +75,7 @@ navapi/
 1. **Discovery over documentation.** Hit `$metadata`, cache it, autocomplete from it. Don't make users read Microsoft Learn to find the entity name.
 2. **Agent-first output.** Every command supports `--json` with a stable, semver'd schema. `isTTY` detection means humans get pretty output and pipes get JSON automatically.
 3. **ETags are not the user's problem.** `patch` and `delete` transparently GET-then-modify with `If-Match`. Concurrency safety by default.
-4. **Profiles, not env vars.** Named profiles for every customer × environment combo. Secrets live outside the profile config behind a pluggable `SecretStore` (file-backed today — `keytar` is archived upstream; an OS-keychain backend via `@napi-rs/keyring` is on the roadmap). `NAVAPI_CLIENT_SECRET` covers CI.
+4. **Profiles, not env vars.** Named profiles for every customer × environment combo. Secrets go to the **OS keychain** (Credential Manager / Keychain / libsecret via `@napi-rs/keyring`), with a file fallback on platforms without one — existing file secrets migrate to the keychain automatically on first use. `navapi secrets status` shows where every secret lives; `NAVAPI_CLIENT_SECRET` covers CI and `NAVAPI_SECRET_BACKEND=file` opts out.
 5. **Batching is a first-class citizen.** `$batch` support from day one — bulk ops are where BC APIs get slow.
 6. **Same brain, four faces.** Any capability added to `core` is instantly available to CLI, VS Code, and MCP.
 
@@ -93,7 +93,7 @@ Roadmap:
 - [x] `@navapi/core`: bound actions (`Microsoft.NAV.*`, namespace-qualified from cached metadata)
 - [x] `@navapi/mcp`: MCP server exposing typed tools (14 tools incl. navigation + real pagination; profiles shared with the CLI)
 - [x] `navapi-vscode`: sidebar sections (Profiles / Companies / Endpoint Browser with live record counts), records grid (server-side sort + paging via `odata.maxpagesize`, query builder for `$filter`/`$select`/`$count`, copyable query URL, BC-style right-click filtering, FastTab detail panes with lazy-loaded navigations), profile add/edit form with Test Connection
-- [ ] OS-keychain secret backend (`@napi-rs/keyring`; file store stays as the CI fallback)
+- [x] OS-keychain secret backend (`@napi-rs/keyring`, layered over the file store with auto-migration; `navapi secrets status|migrate`; keychain binding ships inside the `.vsix`)
 - [ ] Docs site
 - [ ] `0.1.0-alpha.1` to npm + `.vsix` to the Marketplace
 

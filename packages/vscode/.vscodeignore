@@ -1,5 +1,6 @@
 **
 !dist/extension.js
+!dist/node_modules/**
 !media/**
 !README.md
 !LICENSE

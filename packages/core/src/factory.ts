@@ -3,7 +3,7 @@ import { ClientCredentialsAuth } from './auth.js';
 import { defaultConfigDir, MetadataCache } from './cache.js';
 import { BcClient } from './client.js';
 import { NavApiError } from './errors.js';
-import { FileSecretStore, ProfileStore } from './profiles.js';
+import { ProfileStore, resolveSecretStore } from './profiles.js';
 
 export interface CreateClientOptions {
   /** Config directory; defaults to NAVAPI_CONFIG_DIR or ~/.navapi */
@@ -26,7 +26,8 @@ export async function createClientForProfile(
   const store = new ProfileStore(dir);
   const profile = await store.get(profileName ?? process.env.NAVAPI_PROFILE);
   const secret =
-    process.env.NAVAPI_CLIENT_SECRET ?? (await new FileSecretStore(dir).get(profile.name));
+    process.env.NAVAPI_CLIENT_SECRET ??
+    (await (await resolveSecretStore(dir)).store.get(profile.name));
   if (!secret) {
     throw new NavApiError(
       `No client secret stored for profile "${profile.name}". ` +

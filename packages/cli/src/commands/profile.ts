@@ -45,10 +45,11 @@ export function registerProfile(program: Command): void {
         },
         { makeDefault: Boolean(opts.default) },
       );
-      await secretStore().set(name, secret);
+      const { store, backend } = await secretStore();
+      await store.set(name, secret);
       console.log(
         `${pc.green('✔')} Profile ${pc.bold(name)} saved ` +
-          pc.dim(`(${opts.environment} @ ${opts.tenant})`),
+          pc.dim(`(${opts.environment} @ ${opts.tenant}, secret in ${backend})`),
       );
       console.log(pc.dim(`Next: navapi discover -p ${name}`));
     });
@@ -122,7 +123,7 @@ export function registerProfile(program: Command): void {
     .description('Remove a profile, its secret, and its metadata cache')
     .action(async (name: string) => {
       await profileStore().remove(name);
-      await secretStore().delete(name);
+      await (await secretStore()).store.delete(name);
       await new MetadataCache(path.join(configDir(), 'cache')).clear(name);
       console.log(`${pc.green('✔')} Removed profile ${pc.bold(name)}`);
     });

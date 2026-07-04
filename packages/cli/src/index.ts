@@ -6,6 +6,7 @@ import { registerCompany } from './commands/company.js';
 import { registerCrud } from './commands/crud.js';
 import { registerDiscover } from './commands/discover.js';
 import { registerProfile } from './commands/profile.js';
+import { registerSecrets } from './commands/secrets.js';
 
 const program = new Command();
 
@@ -20,6 +21,7 @@ registerDiscover(program);
 registerCrud(program);
 registerAction(program);
 registerCompany(program);
+registerSecrets(program);
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   if (err instanceof HttpError) {

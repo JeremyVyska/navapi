@@ -7,4 +7,6 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   target: 'node20',
+  // Optional native dep: resolved at runtime when installed, never bundled.
+  external: ['@napi-rs/keyring'],
 });

@@ -2,7 +2,7 @@
   "name": "navapi-vscode",
   "displayName": "navapi — Business Central APIs",
   "description": "Browse Business Central environments, API routes, and entities. Tree views, one-click requests, schema browsing — for humans who like buttons.",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "license": "MIT",
   "private": true,
   "publisher": "jeremy-vyska",
@@ -188,9 +188,10 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
-    "package": "vsce package --no-dependencies --allow-missing-repository"
+    "package": "node scripts/copy-keyring.mjs && vsce package --no-dependencies --allow-missing-repository"
   },
   "devDependencies": {
+    "@napi-rs/keyring": "^1.1.0",
     "@navapi/core": "workspace:*",
     "@types/node": "^24.0.0",
     "@types/vscode": "~1.90.0",

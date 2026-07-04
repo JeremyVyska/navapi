@@ -2,7 +2,15 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { FileSecretStore, MetadataCache, ProfileStore } from '../src/index.js';
+import {
+  FileSecretStore,
+  KeychainSecretStore,
+  type KeyringFactory,
+  LayeredSecretStore,
+  MetadataCache,
+  ProfileStore,
+  resolveSecretStore,
+} from '../src/index.js';
 
 let tmpDir: string;
 
@@ -57,6 +65,100 @@ describe('FileSecretStore', () => {
     expect(await store.get('contoso-prod')).toBe('hunter2');
     await store.delete('contoso-prod');
     expect(await store.get('contoso-prod')).toBeUndefined();
+  });
+});
+
+/** In-memory keyring double matching @napi-rs/keyring's Entry surface. */
+function fakeKeyring(seed: Record<string, string> = {}) {
+  const vault = new Map(Object.entries(seed));
+  const factory: KeyringFactory = (service, account) => ({
+    getPassword: () => vault.get(`${service}/${account}`) ?? null,
+    setPassword: (secret) => void vault.set(`${service}/${account}`, secret),
+    deletePassword: () => vault.delete(`${service}/${account}`),
+  });
+  return { factory, vault };
+}
+
+describe('KeychainSecretStore', () => {
+  it('round-trips secrets under the navapi service', async () => {
+    const { factory, vault } = fakeKeyring();
+    const store = new KeychainSecretStore(factory);
+    await store.set('contoso', 'hunter2');
+    expect(vault.get('navapi/contoso')).toBe('hunter2');
+    expect(await store.get('contoso')).toBe('hunter2');
+    await store.delete('contoso');
+    expect(await store.get('contoso')).toBeUndefined();
+  });
+});
+
+describe('LayeredSecretStore', () => {
+  it('migrates file secrets into the keychain on first read', async () => {
+    const file = new FileSecretStore(tmpDir);
+    await file.set('contoso', 'from-file');
+    const { factory, vault } = fakeKeyring();
+    const layered = new LayeredSecretStore(new KeychainSecretStore(factory), file);
+
+    expect(await layered.get('contoso')).toBe('from-file');
+    expect(vault.get('navapi/contoso')).toBe('from-file'); // migrated in
+    expect(await file.get('contoso')).toBeUndefined(); // and out of the file
+
+    expect(await layered.get('contoso')).toBe('from-file'); // now from keychain
+  });
+
+  it('writes to the keychain and clears stale file copies', async () => {
+    const file = new FileSecretStore(tmpDir);
+    await file.set('contoso', 'old');
+    const { factory, vault } = fakeKeyring();
+    const layered = new LayeredSecretStore(new KeychainSecretStore(factory), file);
+
+    await layered.set('contoso', 'new');
+    expect(vault.get('navapi/contoso')).toBe('new');
+    expect(await file.get('contoso')).toBeUndefined();
+  });
+
+  it('falls back to the file store when the keychain write fails', async () => {
+    const broken: KeyringFactory = () => ({
+      getPassword: () => {
+        throw new Error('locked');
+      },
+      setPassword: () => {
+        throw new Error('locked');
+      },
+      deletePassword: () => {
+        throw new Error('locked');
+      },
+    });
+    const file = new FileSecretStore(tmpDir);
+    const layered = new LayeredSecretStore(new KeychainSecretStore(broken), file);
+    await layered.set('contoso', 's3cret');
+    expect(await file.get('contoso')).toBe('s3cret');
+    expect(await layered.get('contoso')).toBe('s3cret');
+  });
+});
+
+describe('resolveSecretStore', () => {
+  it('uses the keychain (layered) when a keyring is available', async () => {
+    const { factory } = fakeKeyring();
+    const resolved = await resolveSecretStore(tmpDir, { keyringFactory: factory });
+    expect(resolved.backend).toBe('keychain');
+    expect(resolved.store).toBeInstanceOf(LayeredSecretStore);
+  });
+
+  it('falls back to the file store when no keyring loads', async () => {
+    const resolved = await resolveSecretStore(tmpDir, { keyringFactory: null });
+    expect(resolved.backend).toBe('file');
+    expect(resolved.store).toBeInstanceOf(FileSecretStore);
+  });
+
+  it('honors NAVAPI_SECRET_BACKEND=file even with a keyring present', async () => {
+    process.env.NAVAPI_SECRET_BACKEND = 'file';
+    try {
+      const { factory } = fakeKeyring();
+      const resolved = await resolveSecretStore(tmpDir, { keyringFactory: factory });
+      expect(resolved.backend).toBe('file');
+    } finally {
+      delete process.env.NAVAPI_SECRET_BACKEND;
+    }
   });
 });
 

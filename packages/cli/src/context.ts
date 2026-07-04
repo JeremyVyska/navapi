@@ -2,8 +2,9 @@ import {
   type BcClient,
   createClientForProfile,
   defaultConfigDir,
-  FileSecretStore,
   ProfileStore,
+  type ResolvedSecretStore,
+  resolveSecretStore,
 } from '@navapi/core';
 
 export function configDir(): string {
@@ -14,8 +15,9 @@ export function profileStore(): ProfileStore {
   return new ProfileStore(configDir());
 }
 
-export function secretStore(): FileSecretStore {
-  return new FileSecretStore(configDir());
+/** Keychain when available, file otherwise (NAVAPI_SECRET_BACKEND overrides). */
+export function secretStore(): Promise<ResolvedSecretStore> {
+  return resolveSecretStore(configDir());
 }
 
 /** Profile resolution: --profile flag → NAVAPI_PROFILE env → stored default. */

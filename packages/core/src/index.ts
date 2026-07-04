@@ -30,7 +30,14 @@ export { BcHttp, type BcHttpOptions, type BcResponse, type RequestOptions } from
 export { parseMetadata } from './metadata.js';
 export {
   FileSecretStore,
+  KeychainSecretStore,
+  type KeyringEntry,
+  type KeyringFactory,
+  LayeredSecretStore,
+  loadKeyringFactory,
   ProfileStore,
+  type ResolvedSecretStore,
+  resolveSecretStore,
   type SecretStore,
 } from './profiles.js';
 export { buildQueryString, formatKey, isGuid, type ODataQuery } from './query.js';

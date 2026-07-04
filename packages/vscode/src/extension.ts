@@ -1,8 +1,8 @@
 import {
   createClientForProfile,
   defaultConfigDir,
-  FileSecretStore,
   ProfileStore,
+  resolveSecretStore,
 } from '@navapi/core';
 import * as vscode from 'vscode';
 import { saveCompanies } from './companies-cache.js';
@@ -45,7 +45,8 @@ async function resolveProfileName(node?: ProfileNode): Promise<string> {
 async function editProfileFlow(ui: Ui, node: ProfileNode): Promise<void> {
   const dir = defaultConfigDir();
   const profile = await new ProfileStore(dir).get(node.profileName);
-  const hasSecret = Boolean(await new FileSecretStore(dir).get(node.profileName));
+  const { store } = await resolveSecretStore(dir);
+  const hasSecret = Boolean(await store.get(node.profileName));
   ProfileFormPanel.show(() => void ui.refresh(), profile, hasSecret);
 }
 
@@ -160,7 +161,7 @@ async function removeProfileFlow(ui: Ui, node: ProfileNode): Promise<void> {
   if (confirm !== 'Remove') return;
   const dir = defaultConfigDir();
   await new ProfileStore(dir).remove(node.profileName);
-  await new FileSecretStore(dir).delete(node.profileName);
+  await (await resolveSecretStore(dir)).store.delete(node.profileName);
   await ui.refresh();
 }
 

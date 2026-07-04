@@ -85,14 +85,144 @@ export class ProfileStore {
 }
 
 /**
- * Pluggable secret storage. The default implementation is a file with
- * owner-only permissions; an OS-keychain backend can implement this same
- * interface later without touching callers.
+ * Pluggable secret storage. {@link resolveSecretStore} picks the best
+ * available backend: OS keychain (via @napi-rs/keyring) layered over the
+ * file store, or the file store alone when no keychain is available.
  */
 export interface SecretStore {
   get(profileName: string): Promise<string | undefined>;
   set(profileName: string, secret: string): Promise<void>;
   delete(profileName: string): Promise<void>;
+}
+
+/** Minimal surface of @napi-rs/keyring's Entry, injectable for tests. */
+export interface KeyringEntry {
+  getPassword(): string | null;
+  setPassword(secret: string): void;
+  deletePassword(): boolean;
+}
+
+export type KeyringFactory = (service: string, account: string) => KeyringEntry;
+
+const KEYRING_SERVICE = 'navapi';
+
+let probedKeyring: KeyringFactory | null | undefined;
+
+/**
+ * Loads @napi-rs/keyring if it is installed and its native binding works on
+ * this platform; returns null otherwise (callers fall back to the file
+ * store). Probed once per process.
+ */
+export async function loadKeyringFactory(): Promise<KeyringFactory | null> {
+  if (probedKeyring !== undefined) return probedKeyring;
+  try {
+    const mod = (await import('@napi-rs/keyring')) as {
+      Entry?: new (service: string, account: string) => KeyringEntry;
+    };
+    const Entry = mod.Entry;
+    probedKeyring = Entry ? (service, account) => new Entry(service, account) : null;
+  } catch {
+    probedKeyring = null;
+  }
+  return probedKeyring;
+}
+
+/** Secrets in the OS keychain (Credential Manager / Keychain / libsecret). */
+export class KeychainSecretStore implements SecretStore {
+  constructor(
+    private readonly factory: KeyringFactory,
+    private readonly service: string = KEYRING_SERVICE,
+  ) {}
+
+  async get(profileName: string): Promise<string | undefined> {
+    try {
+      return this.factory(this.service, profileName).getPassword() ?? undefined;
+    } catch {
+      // keyring throws on missing entries on some platforms
+      return undefined;
+    }
+  }
+
+  async set(profileName: string, secret: string): Promise<void> {
+    this.factory(this.service, profileName).setPassword(secret);
+  }
+
+  async delete(profileName: string): Promise<void> {
+    try {
+      this.factory(this.service, profileName).deletePassword();
+    } catch {
+      // nothing to delete
+    }
+  }
+}
+
+/**
+ * Primary store with fallback reads: secrets found only in the fallback are
+ * migrated to the primary (best effort), so pre-keychain file secrets move
+ * into the keychain the first time they're used. Writes prefer the primary
+ * and clear any stale fallback copy.
+ */
+export class LayeredSecretStore implements SecretStore {
+  constructor(
+    private readonly primary: SecretStore,
+    private readonly fallback: SecretStore,
+  ) {}
+
+  async get(profileName: string): Promise<string | undefined> {
+    const fromPrimary = await this.primary.get(profileName);
+    if (fromPrimary !== undefined) return fromPrimary;
+    const fromFallback = await this.fallback.get(profileName);
+    if (fromFallback !== undefined) {
+      try {
+        await this.primary.set(profileName, fromFallback);
+        await this.fallback.delete(profileName);
+      } catch {
+        // keep the fallback copy if migration fails
+      }
+    }
+    return fromFallback;
+  }
+
+  async set(profileName: string, secret: string): Promise<void> {
+    try {
+      await this.primary.set(profileName, secret);
+      await this.fallback.delete(profileName);
+    } catch {
+      await this.fallback.set(profileName, secret);
+    }
+  }
+
+  async delete(profileName: string): Promise<void> {
+    await this.primary.delete(profileName);
+    await this.fallback.delete(profileName);
+  }
+}
+
+export interface ResolvedSecretStore {
+  store: SecretStore;
+  backend: 'keychain' | 'file';
+}
+
+/**
+ * The store every face should use. Prefers the OS keychain (layered over the
+ * file store so existing secrets migrate); falls back to the plain file
+ * store when no keychain is available or NAVAPI_SECRET_BACKEND=file.
+ */
+export async function resolveSecretStore(
+  dir?: string,
+  opts: { keyringFactory?: KeyringFactory | null } = {},
+): Promise<ResolvedSecretStore> {
+  const file = new FileSecretStore(dir);
+  if (process.env.NAVAPI_SECRET_BACKEND === 'file') {
+    return { store: file, backend: 'file' };
+  }
+  const factory =
+    opts.keyringFactory !== undefined ? opts.keyringFactory : await loadKeyringFactory();
+  if (!factory) return { store: file, backend: 'file' };
+  return {
+    store: new LayeredSecretStore(new KeychainSecretStore(factory), file),
+    backend: 'keychain',
+  };
 }
 
 export class FileSecretStore implements SecretStore {
