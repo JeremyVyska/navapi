@@ -1,0 +1,130 @@
+# navapi
+
+> The Business Central API toolkit that doesn't make you cry. 🧭
+
+**navapi** is a discovery-first toolkit for talking to Microsoft Dynamics 365 Business Central APIs — with four faces sharing one brain:
+
+- 📚 **`@navapi/core`** — TypeScript library. Auth, HTTP, ETag handling, `$metadata` discovery, pagination, retries.
+- 🖥️ **`navapi` CLI** — because typing beats clicking. Agent-friendly with stable `--json` output.
+- 🧩 **`navapi-vscode`** — Profiles/Companies/Endpoint Browser in the sidebar, a records grid with a BC-style query builder, server-side sort/paging, FastTab detail panes, and right-click filtering. For humans who like buttons.
+- 🤖 **`@navapi/mcp`** — Model Context Protocol server: 14 typed tools, so agents get discovery, CRUD, actions, `$batch`, and paging without shelling out.
+
+> "NAV lives. Now with better verbs."
+
+---
+
+## Why this exists
+
+If you've ever spent 40 minutes re-configuring a Postman collection for the fourth customer this month — populating environments, refreshing tokens, remembering which company GUID goes where, hunting through the OData `$metadata` XML to figure out which custom API page a partner exposed — this is for you.
+
+Postman is a great HTTP client. It is *not* a great **Business Central** client. navapi knows about companies, environments, ETags, bound actions, `$batch`, and the `$metadata` document. You should not have to.
+
+## What it looks like
+
+```bash
+# One-time setup per environment
+navapi profile add contoso-prod \
+  --tenant $TENANT_ID \
+  --client-id $CLIENT_ID \
+  --environment Production \
+  --company "CRONUS International"
+
+# Then just… use it
+navapi profile test                # verify credentials before anything else
+navapi company use                 # interactive picker; companies(<id>)/ prefixing is automatic
+navapi get customers --top 10
+navapi get customers --count --show-url            # "x of Y" totals + the exact request URL
+navapi get salesOrders --filter "status eq 'Open'" --json | jq '.[] | .number'
+navapi get salesOrders <id> --nav salesOrderLines  # navigation properties, no $expand wrangling
+navapi patch customers 01121212-a0b0-e011-8fb2-78e7d1625bd8 --set blocked=All
+navapi action salesOrders <id> shipAndInvoice      # bound actions, namespace-qualified for you
+navapi batch --body bulk.json      # OData $batch with {company} substitution
+navapi discover                    # every route + entity on this env, cached
+navapi discover customer --schema  # show the shape
+```
+
+Or from an agent, via MCP:
+
+```jsonc
+// Agent asks for "release all sales orders over $10k from ACME"
+// MCP exposes 14 typed tools: list_entities, get_entity_schema, get_records,
+// get_next_page, get_navigation, update_record, invoke_action, invoke_batch, …
+// No shell, no scraping stdout, just typed calls — with real pagination.
+```
+
+## Architecture
+
+One repo, workspace monorepo (pnpm), four packages:
+
+```
+navapi/
+├── packages/
+│   ├── core/       → @navapi/core     library, zero UI assumptions
+│   ├── cli/        → navapi           thin wrapper, TTY-aware output
+│   ├── vscode/     → navapi-vscode    extension, thin wrapper
+│   └── mcp/        → @navapi/mcp      MCP server, thin wrapper
+├── docs/           (planned — docs site)
+├── examples/       (planned)
+└── .changeset/
+```
+
+**Design rule:** if it's not UI-specific, it belongs in `core`. The faces should be as thin as physically possible. A bug in auth is fixed in one place.
+
+## Design principles
+
+1. **Discovery over documentation.** Hit `$metadata`, cache it, autocomplete from it. Don't make users read Microsoft Learn to find the entity name.
+2. **Agent-first output.** Every command supports `--json` with a stable, semver'd schema. `isTTY` detection means humans get pretty output and pipes get JSON automatically.
+3. **ETags are not the user's problem.** `patch` and `delete` transparently GET-then-modify with `If-Match`. Concurrency safety by default.
+4. **Profiles, not env vars.** Named profiles for every customer × environment combo. Secrets live outside the profile config behind a pluggable `SecretStore` (file-backed today — `keytar` is archived upstream; an OS-keychain backend via `@napi-rs/keyring` is on the roadmap). `NAVAPI_CLIENT_SECRET` covers CI.
+5. **Batching is a first-class citizen.** `$batch` support from day one — bulk ops are where BC APIs get slow.
+6. **Same brain, four faces.** Any capability added to `core` is instantly available to CLI, VS Code, and MCP.
+
+## Status
+
+🚧 **Pre-alpha, but very much alive.** All four faces are built and tested (100+ tests) against a mock BC server; nothing is published to npm or the Marketplace yet. The VS Code extension ships as a local `.vsix` (`pnpm --filter navapi-vscode package`).
+
+Roadmap:
+
+- [x] Workspace scaffold + tooling (pnpm, tsup, changesets, vitest, biome)
+- [x] `@navapi/core`: OAuth client credentials, HTTP client, ETag handling
+- [x] `@navapi/core`: `$metadata` discovery + on-disk cache (routes enumerated via the runtime API's `apiRoutes`, with `/api/routes` and `v2.0` fallbacks)
+- [x] `navapi` CLI: `profile`, `get`, `post`, `patch`, `delete`, `discover` (+ `routes`, `ls`, `companies`)
+- [x] `@navapi/core`: `$batch` support (JSON batch, `{company}` substitution, atomicity groups)
+- [x] `@navapi/core`: bound actions (`Microsoft.NAV.*`, namespace-qualified from cached metadata)
+- [x] `@navapi/mcp`: MCP server exposing typed tools (14 tools incl. navigation + real pagination; profiles shared with the CLI)
+- [x] `navapi-vscode`: sidebar sections (Profiles / Companies / Endpoint Browser with live record counts), records grid (server-side sort + paging via `odata.maxpagesize`, query builder for `$filter`/`$select`/`$count`, copyable query URL, BC-style right-click filtering, FastTab detail panes with lazy-loaded navigations), profile add/edit form with Test Connection
+- [ ] OS-keychain secret backend (`@napi-rs/keyring`; file store stays as the CI fallback)
+- [ ] Docs site
+- [ ] `0.1.0-alpha.1` to npm + `.vsix` to the Marketplace
+
+## What Ifs
+
+Answered by building:
+
+- ✅ **What if BC returns a 412?** Auto-retry once with a fresh GET + `If-Match`, then surface the conflict. Implemented in core; all faces inherit it.
+- ✅ **What if a bound action takes a complex parameter object?** `navapi action … --body <file|json|->` and the `parameters` argument on the MCP tool.
+- ✅ **What if a profile's secret expires?** Client-credentials tokens auto-refresh (with in-flight coalescing); a bad secret surfaces the raw AADSTS error, and `navapi profile test` / the form's Test Connection catch it early.
+
+Still open:
+
+- **What if the user has 12 customers × 3 environments each?** Profile groups / tags for bulk operations across envs? (Later, not v1.)
+- **What if this pattern works for D365 F&O too?** Name locks us to BC/NAV lineage. Fine for now, revisit at 1.0.
+- **What if two agents hit the same record via MCP?** Session-scoped ETag cache to prevent stale reads within a conversation.
+
+## Contributing
+
+Not open for contributions yet — still shaping the core API. Star and watch if you want to be pinged when it's ready. 🌟
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+
+## Prior art & respect
+
+- The name is a knowing wink to **Navision**, the Danish ERP that became NAV that became Business Central. If you got the joke, you're old. Same. 🧓
+- Command surface inspired by `kubectl`, `aws`, and `gh` — because they got the human/agent duality right.
+- MCP support because [Model Context Protocol](https://modelcontextprotocol.io) is the right primitive for agent tooling and shelling out to a CLI is a workaround, not a design.
+
+---
+
+*Made because Postman collections don't scale to 40 tenants.* ✨

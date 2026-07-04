@@ -1,0 +1,32 @@
+{
+  "name": "navapi",
+  "version": "0.0.0",
+  "description": "The Business Central API CLI that doesn't make you cry. Discovery-first, agent-friendly, ETag-safe.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "navapi": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@navapi/core": "workspace:*",
+    "commander": "^14.0.0",
+    "picocolors": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}

@@ -1,0 +1,203 @@
+{
+  "name": "navapi-vscode",
+  "displayName": "navapi — Business Central APIs",
+  "description": "Browse Business Central environments, API routes, and entities. Tree views, one-click requests, schema browsing — for humans who like buttons.",
+  "version": "0.0.4",
+  "license": "MIT",
+  "private": true,
+  "publisher": "jeremy-vyska",
+  "engines": {
+    "vscode": "^1.90.0",
+    "node": ">=20"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "business central",
+    "dynamics 365",
+    "odata",
+    "erp",
+    "navision"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "navapi",
+          "title": "navapi",
+          "icon": "media/navapi.svg"
+        }
+      ]
+    },
+    "views": {
+      "navapi": [
+        {
+          "id": "navapi.profiles",
+          "name": "Profiles",
+          "icon": "media/navapi.svg"
+        },
+        {
+          "id": "navapi.companies",
+          "name": "Companies",
+          "icon": "media/navapi.svg"
+        },
+        {
+          "id": "navapi.endpoints",
+          "name": "Endpoint Browser",
+          "icon": "media/navapi.svg"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "navapi.profiles",
+        "contents": "No profiles yet. A profile pins one Business Central environment.\n[Add Profile](command:navapi.addProfile)\nProfiles are shared with the navapi CLI and MCP server."
+      }
+    ],
+    "commands": [
+      {
+        "command": "navapi.refresh",
+        "title": "Refresh",
+        "category": "navapi",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "navapi.addProfile",
+        "title": "Add Profile",
+        "category": "navapi",
+        "icon": "$(add)"
+      },
+      {
+        "command": "navapi.discover",
+        "title": "Discover Routes & Entities",
+        "category": "navapi",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "navapi.setDefaultProfile",
+        "title": "Set as Active Profile",
+        "category": "navapi"
+      },
+      {
+        "command": "navapi.editProfile",
+        "title": "Edit Profile",
+        "category": "navapi",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "navapi.refreshCompanies",
+        "title": "Refresh Companies",
+        "category": "navapi",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "navapi.removeProfile",
+        "title": "Remove Profile",
+        "category": "navapi"
+      },
+      {
+        "command": "navapi.openEntity",
+        "title": "Browse Records",
+        "category": "navapi",
+        "icon": "$(table)"
+      },
+      {
+        "command": "navapi.openEntityJson",
+        "title": "Browse Records (JSON)",
+        "category": "navapi",
+        "icon": "$(json)"
+      },
+      {
+        "command": "navapi.showSchema",
+        "title": "Show Schema",
+        "category": "navapi",
+        "icon": "$(symbol-structure)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "navapi.addProfile",
+          "when": "view == navapi.profiles",
+          "group": "navigation@1"
+        },
+        {
+          "command": "navapi.refresh",
+          "when": "view == navapi.profiles",
+          "group": "navigation@2"
+        },
+        {
+          "command": "navapi.refreshCompanies",
+          "when": "view == navapi.companies",
+          "group": "navigation@1"
+        },
+        {
+          "command": "navapi.discover",
+          "when": "view == navapi.endpoints",
+          "group": "navigation@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "navapi.discover",
+          "when": "view == navapi.profiles && viewItem == profile",
+          "group": "inline"
+        },
+        {
+          "command": "navapi.discover",
+          "when": "view == navapi.profiles && viewItem == profile",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "navapi.editProfile",
+          "when": "view == navapi.profiles && viewItem == profile",
+          "group": "1_actions@2"
+        },
+        {
+          "command": "navapi.setDefaultProfile",
+          "when": "view == navapi.profiles && viewItem == profile",
+          "group": "1_actions@3"
+        },
+        {
+          "command": "navapi.removeProfile",
+          "when": "view == navapi.profiles && viewItem == profile",
+          "group": "9_destructive"
+        },
+        {
+          "command": "navapi.openEntity",
+          "when": "view == navapi.endpoints && viewItem == entitySet",
+          "group": "inline"
+        },
+        {
+          "command": "navapi.openEntityJson",
+          "when": "view == navapi.endpoints && viewItem == entitySet",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "navapi.showSchema",
+          "when": "view == navapi.endpoints && viewItem == entitySet",
+          "group": "1_actions@2"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "package": "vsce package --no-dependencies --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@navapi/core": "workspace:*",
+    "@types/node": "^24.0.0",
+    "@types/vscode": "~1.90.0",
+    "@vscode/vsce": "^3.3.0",
+    "jsdom": "^29.1.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}

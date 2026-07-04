@@ -1,0 +1,7 @@
+packages:
+  - 'packages/*'
+# vsce-sign and keytar are only needed for marketplace publish/signing, not `vsce package`.
+allowBuilds:
+  '@vscode/vsce-sign': false
+  esbuild: true
+  keytar: false
