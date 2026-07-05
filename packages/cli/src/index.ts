@@ -3,6 +3,7 @@ import { HttpError, NavApiError } from '@navapi/core';
 import { Command } from 'commander';
 import pc from 'picocolors';
 import { registerAction } from './commands/action.js';
+import { registerBraider } from './commands/braider.js';
 import { registerCompany } from './commands/company.js';
 import { registerCrud } from './commands/crud.js';
 import { registerDiscover } from './commands/discover.js';
@@ -24,6 +25,7 @@ registerDiscover(program);
 registerCrud(program);
 registerAction(program);
 registerCompany(program);
+registerBraider(program);
 registerSecrets(program);
 
 program.parseAsync(process.argv).catch((err: unknown) => {

@@ -59,10 +59,28 @@ Or from an agent, via MCP:
 
 ```jsonc
 // Agent asks for "release all sales orders over $10k from ACME"
-// MCP exposes 14 typed tools: list_entities, get_entity_schema, get_records,
-// get_next_page, get_navigation, update_record, invoke_action, invoke_batch, …
+// MCP exposes 24 typed tools: list_entities, get_entity_schema, get_records,
+// get_next_page, get_navigation, update_record, invoke_action, invoke_batch,
+// braider_read, braider_write, braider_create_endpoint, …
 // No shell, no scraping stdout, just typed calls — with real pagination.
 ```
+
+## Data Braider, natively
+
+[Data Braider](https://github.com/Spare-Brained-Community/SBI-DataBraider) is the no-code API factory for BC: endpoints are configuration records, not AL code. navapi speaks its dialect natively — the double-encoded `jsonResult`/`filterJson`/`jsonInput` payloads, the `[{table, field, filter}]` BC-syntax filters, the 1-based page indexes — so you never see the plumbing:
+
+```bash
+navapi braider status                                    # detected? which capability level?
+navapi braider ls                                        # configured endpoints
+navapi braider get CUSTOMERS --filter "Customer.No.=10000..20000" --all
+navapi braider write CUST_W --body records.json --action Upsert
+navapi braider schema CUSTOMERS                          # exact field names + types
+# Braider 2.4+ adds a config API — author endpoints remotely:
+navapi braider tables Sales                              # find table numbers
+navapi braider config create --body endpoint-spec.json   # header + lines + fields in one go
+```
+
+The VS Code extension grows a **Data Braider** section (endpoint browser with Braider-native filters/paging, plus a guided "New Endpoint" flow with table/field pickers), and MCP agents get `braider_*` tools with the write conventions documented in the tool descriptions. On older Braider installs everything except schema/authoring still works — schemas fall back to inference from sampled data.
 
 ## Architecture
 
@@ -106,6 +124,7 @@ Roadmap:
 - [x] `@navapi/mcp`: MCP server exposing typed tools (14 tools incl. navigation + real pagination; profiles shared with the CLI)
 - [x] `navapi-vscode`: sidebar sections (Profiles / Companies / Endpoint Browser with live record counts), records grid (server-side sort + paging via `odata.maxpagesize`, query builder for `$filter`/`$select`/`$count`, copyable query URL, BC-style right-click filtering, FastTab detail panes with lazy-loaded navigations), profile add/edit form with Test Connection
 - [x] OS-keychain secret backend (`@napi-rs/keyring`, layered over the file store with auto-migration; `navapi secrets status|migrate`; keychain binding ships inside the `.vsix`)
+- [x] Native Data Braider support across all four faces (discovery, parsed reads/writes, live schema on Braider 2.4+, remote endpoint authoring, VS Code section + guided endpoint creation, `braider_*` MCP tools)
 - [ ] Docs site
 - [ ] `0.1.0-alpha.1` to npm + `.vsix` to the Marketplace
 

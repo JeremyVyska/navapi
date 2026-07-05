@@ -3,7 +3,7 @@
  * Runs the real webview HTML + script in a DOM, so behavior bugs (like a
  * detail pane that never becomes visible) fail here instead of in VS Code.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildGrid } from '../src/grid.js';
 import { renderRecordsHtml } from '../src/webview.js';
 
@@ -49,8 +49,16 @@ function rowsInGrid(): HTMLTableRowElement[] {
 }
 
 beforeEach(() => {
-  vi.useRealTimers();
+  // Fake timers so the webview's debounce timers (filter preview) can't fire
+  // after jsdom teardown — that surfaces as an unhandled "document is not
+  // defined" error at the end of the run.
+  vi.useFakeTimers();
   mountWebview();
+});
+
+afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
 });
 
 describe('records webview DOM behavior', () => {

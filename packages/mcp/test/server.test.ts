@@ -142,6 +142,16 @@ describe('navapi MCP server', () => {
     const client = await connectedClient();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
+      'braider_create_endpoint',
+      'braider_delete_endpoint',
+      'braider_get_schema',
+      'braider_list_endpoints',
+      'braider_list_fields',
+      'braider_list_tables',
+      'braider_read',
+      'braider_status',
+      'braider_update_endpoint',
+      'braider_write',
       'create_record',
       'delete_record',
       'get_entity_schema',
@@ -299,5 +309,184 @@ describe('navapi MCP server', () => {
 
   it('sanity: fixture EDMX parses', () => {
     expect(parseMetadata(EDMX).entitySets).toHaveLength(1);
+  });
+
+  it('braider_status reports not installed when the route is absent', async () => {
+    const client = await connectedClient();
+    const data = parseText(await client.callTool({ name: 'braider_status', arguments: {} }));
+    expect(data).toEqual({ installed: false });
+  });
+});
+
+// ---------------------------------------------------------------- Braider
+
+const BRAIDER_EDMX = `<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="Microsoft.NAV" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityType Name="read">
+        <Key><PropertyRef Name="code" /></Key>
+        <Property Name="code" Type="Edm.String" Nullable="false" />
+        <Property Name="jsonResult" Type="Edm.String" />
+      </EntityType>
+      <EntityType Name="write">
+        <Key><PropertyRef Name="code" /></Key>
+        <Property Name="code" Type="Edm.String" Nullable="false" />
+      </EntityType>
+      <EntityContainer Name="NAV">
+        <EntitySet Name="read" EntityType="Microsoft.NAV.read" />
+        <EntitySet Name="write" EntityType="Microsoft.NAV.write" />
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>`;
+
+/** fetch fake for an environment WITH Data Braider (level 1). */
+function braiderFetch(): typeof globalThis.fetch {
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = (init?.method ?? 'GET').toUpperCase();
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries((init?.headers ?? {}) as Record<string, string>)) {
+      headers[k.toLowerCase()] = v;
+    }
+    recorded.push({ method, url, headers });
+
+    const json = (status: number, body: unknown) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      });
+
+    if (url.endsWith('/api/routes')) {
+      return json(200, { value: [{ route: 'v2.0' }, { route: 'sparebrained/databraider/v2.0' }] });
+    }
+    if (url.includes('sparebrained/databraider/v2.0/$metadata')) {
+      return new Response(BRAIDER_EDMX, {
+        status: 200,
+        headers: { 'content-type': 'application/xml' },
+      });
+    }
+    if (url.endsWith('/v2.0/$metadata')) {
+      return new Response(EDMX, { status: 200, headers: { 'content-type': 'application/xml' } });
+    }
+    if (url.endsWith('/v2.0/companies')) {
+      return json(200, { value: [{ id: COMPANY_ID, name: 'CRONUS', displayName: 'CRONUS Ltd.' }] });
+    }
+    if (url.includes('/databraider/v2.0/') && url.includes('/write') && method === 'POST') {
+      const body = JSON.parse(String(init?.body ?? '{}'));
+      const input2 = JSON.parse(body.jsonInput);
+      return json(201, {
+        code: body.code,
+        jsonResult: JSON.stringify(
+          input2.map((r: { Action: string }) => ({ action: r.Action.toLowerCase(), data: [r] })),
+        ),
+      });
+    }
+    if (url.includes('/databraider/v2.0/') && url.includes("/read('CUSTOMERS')")) {
+      return json(200, {
+        code: 'CUSTOMERS',
+        jsonResult: JSON.stringify([{ 'Customer.No': '10000', 'Customer.Name': 'Adatum' }]),
+        pageStart: 1,
+        pageSize: 100,
+        topLevelRecordCount: 1,
+        includedRecordCount: 1,
+      });
+    }
+    if (url.includes('/databraider/v2.0/') && url.endsWith('/read')) {
+      return json(200, {
+        value: [
+          {
+            code: 'CUSTOMERS',
+            description: 'All customers',
+            endpointType: 'Read_x0020_Only',
+            outputJSONType: 'Flat',
+          },
+        ],
+      });
+    }
+    return json(404, { error: { code: 'NotFound', message: `no handler for ${method} ${url}` } });
+  }) as typeof globalThis.fetch;
+}
+
+async function connectedBraiderClient() {
+  const cache = new MetadataCache(path.join(tmpDir, 'cache'));
+  const server = createNavapiServer({
+    profileStore: new ProfileStore(tmpDir),
+    clientFactory: async () =>
+      new BcClient({
+        profile: {
+          name: 'test',
+          tenantId: 'tenant-1',
+          clientId: 'c',
+          environment: 'Sandbox',
+          company: 'CRONUS',
+        },
+        auth: new StaticTokenProvider('tok'),
+        fetch: braiderFetch(),
+        cache,
+      }),
+  });
+  const client = new Client({ name: 'test-client', version: '0.0.0' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  return client;
+}
+
+describe('navapi MCP server — Data Braider', () => {
+  it('braider_status detects the route and level', async () => {
+    const client = await connectedBraiderClient();
+    const data = parseText(await client.callTool({ name: 'braider_status', arguments: {} }));
+    expect(data).toMatchObject({
+      installed: true,
+      routePath: 'sparebrained/databraider/v2.0',
+      level: 'readwrite',
+    });
+  });
+
+  it('braider_list_endpoints decodes enum names', async () => {
+    const client = await connectedBraiderClient();
+    const data = parseText(
+      await client.callTool({ name: 'braider_list_endpoints', arguments: {} }),
+    );
+    expect(data).toEqual([
+      expect.objectContaining({ code: 'CUSTOMERS', endpointType: 'Read Only' }),
+    ]);
+  });
+
+  it('braider_read unwraps the double-encoded payload', async () => {
+    const client = await connectedBraiderClient();
+    const data = parseText(
+      await client.callTool({ name: 'braider_read', arguments: { code: 'CUSTOMERS' } }),
+    );
+    expect(data.records).toEqual([{ 'Customer.No': '10000', 'Customer.Name': 'Adatum' }]);
+    expect(data.hasMore).toBe(false);
+  });
+
+  it('braider_write round-trips jsonInput with If-Match: *', async () => {
+    const client = await connectedBraiderClient();
+    const data = parseText(
+      await client.callTool({
+        name: 'braider_write',
+        arguments: {
+          code: 'CUST_W',
+          records: [{ 'Customer.Name': 'New Co' }],
+          defaultAction: 'Insert',
+        },
+      }),
+    );
+    expect(data).toEqual([expect.objectContaining({ action: 'insert' })]);
+    const post = recorded.find((r) => r.method === 'POST' && r.url.endsWith('/write'));
+    expect(post?.headers['if-match']).toBe('*');
+  });
+
+  it('config tools fail with a clear message at level 1', async () => {
+    const client = await connectedBraiderClient();
+    const result = await client.callTool({
+      name: 'braider_list_tables',
+      arguments: {},
+    });
+    expect(result.isError).toBe(true);
+    expect((result.content as { text: string }[])[0].text).toContain('config API');
   });
 });

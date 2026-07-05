@@ -26,10 +26,14 @@ cd packages/vscode && npx tsc --noEmit  # only package that needs a manual typec
 - **fast-xml-parser:** with `attributeNamePrefix: ''`, the `isArray` callback must check its `isAttribute` argument or attribute names collide with element names.
 - **Secrets:** never write to the real keychain from tests/smokes — set `NAVAPI_SECRET_BACKEND=file` (CI does; smoke scripts do).
 - **CLI `--json` output shape is a stability promise** — bare arrays/objects by default; envelopes only behind opt-in flags (e.g. `--count`).
+- **Data Braider payloads are double-encoded** (stringified JSON inside `jsonResult`/`filterJson`/`jsonInput`); the unwrap lives ONLY in `core/src/braider.ts` (`parseJsonResult`/`encodeJsonInput`/`encodeFilterJson`). Braider errors arrive as `[{Row, Column, Error, Detail}]` arrays *inside* jsonResult, not as HTTP errors.
+- **Braider `pageStart` is a 1-based PAGE INDEX** (skip = `(pageStart−1)×pageSize` top-level records) and requesting past the end is a server-side error — the `all` loop is bounded by `topLevelRecordCount`, never probe-until-empty. Deliberately NOT named/typed like `maxPageSize` (different semantics).
+- **Braider enum values are EDM-encoded on the wire** (`Per_x0020_Record`); `decodeODataName`/`encodeODataName` handle both directions. Config-API entity-set names live in exactly one place: `resolveConfigSets()` in braider.ts.
+- **Braider capability levels:** level 1 = `read`+`write` only (schema falls back to inference from sampled rows); level 2 (Braider 2.4+) adds `endpointConfigs`/`endpointLines`/`endpointFields`/`endpointRelations`/`endpointSchemas`/`availableTables`/`availableFields`. Config methods throw a clear NavApiError at level 1 — keep that graceful degradation intact.
 
 ## Testing
 
-Unit tests mock `fetch` via injection (see `packages/core/test/helpers.ts`). The fake BC server used for E2E smokes lives in the session scratchpad, not the repo — it mirrors *documented* BC semantics (e.g. `$top` vs `maxpagesize`); don't let test doubles encode assumptions. Live-tenant validation happened 2026-07-05 against a real env (22 routes, 645 entity sets, full CRUD) — profile `live-test` may still exist in `~/.navapi`.
+Unit tests mock `fetch` via injection (see `packages/core/test/helpers.ts`). The fake BC server used for E2E smokes lives in the session scratchpad, not the repo — it mirrors *documented* BC semantics (e.g. `$top` vs `maxpagesize`, genuinely double-encoded Braider `jsonResult`); don't let test doubles encode assumptions. Data Braider protocol facts were verified against the AL source at `C:\Work\sbi-public\SBI-DataBraider` (its 2.4.0.0 adds the config API pages navapi's level-2 features target). Live-tenant validation happened 2026-07-05 against a real env (22 routes, 645 entity sets, full CRUD) — profile `live-test` may still exist in `~/.navapi`.
 
 Config dir: `~/.navapi` (`NAVAPI_CONFIG_DIR` override) — `profiles.json`, keychain-backed secrets (file fallback `secrets.json`), `cache/<profile>/<route>.json` metadata, `companies/`, `counts/`. Env vars: `NAVAPI_PROFILE`, `NAVAPI_CLIENT_SECRET`, `NAVAPI_AUTHORITY` (sovereign clouds/test servers), `NAVAPI_SECRET_BACKEND`.
 

@@ -289,9 +289,13 @@ export class BcClient {
     return data as BcRecord;
   }
 
-  async create(entitySet: string, body: unknown, opts: RecordOptions = {}): Promise<BcRecord> {
+  async create(
+    entitySet: string,
+    body: unknown,
+    opts: RecordOptions & { etag?: string } = {},
+  ): Promise<BcRecord> {
     const url = await this.collectionUrl(entitySet, opts);
-    const { data } = await this.http.request('POST', url, { body });
+    const { data } = await this.http.request('POST', url, { body, ifMatch: opts.etag });
     return data as BcRecord;
   }
 

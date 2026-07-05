@@ -3,10 +3,16 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   type BatchRequest,
   type BcClient,
+  BraiderClient,
+  type BraiderEndpointSpec,
+  type BraiderFilter,
+  type BraiderWriteAction,
+  type BraiderWriteRecord,
   type CachedRouteMetadata,
   companyLabel,
   createClientForProfile,
   defaultConfigDir,
+  detectBraider,
   findCompany,
   ProfileStore,
 } from '@navapi/core';
@@ -419,6 +425,278 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
     safe(async ({ profile, requests, route, company }) =>
       (await getClient(profile)).batch(requests as BatchRequest[], { route, company }),
     ),
+  );
+
+  // ------------------------------------------------------------ Data Braider
+
+  const braiderClients = new Map<string, Promise<BraiderClient>>();
+
+  function getBraider(profileName?: string): Promise<BraiderClient> {
+    const key = profileName ?? '';
+    let braider = braiderClients.get(key);
+    if (!braider) {
+      braider = (async () => {
+        const client = await getClient(profileName);
+        const info = await detectBraider(client);
+        if (!info) {
+          throw new Error(
+            'Data Braider was not detected in this environment. ' +
+              'Use braider_status with refresh=true to re-check, or verify the extension is installed.',
+          );
+        }
+        return new BraiderClient(client, info);
+      })();
+      braiderClients.set(key, braider);
+      braider.catch(() => braiderClients.delete(key));
+    }
+    return braider;
+  }
+
+  const braiderFilterSchema = z
+    .array(
+      z.object({
+        table: z.union([z.string(), z.number()]).describe('Table name or number'),
+        field: z.union([z.string(), z.number()]).describe('Field name or number'),
+        filter: z.string().describe('BC filter expression, e.g. "10000..20000" or "<>\'\'"'),
+      }),
+    )
+    .optional()
+    .describe('Data Braider filters (BC filter syntax, NOT OData $filter)');
+
+  server.registerTool(
+    'braider_status',
+    {
+      description:
+        'Detect Data Braider (the no-code BC API factory) in the environment: route path, version, and capability level (read/write only vs. full config/authoring API on Braider 2.4+).',
+      inputSchema: {
+        ...profileArg,
+        refresh: z.boolean().optional().describe('Re-enumerate routes and refetch metadata'),
+      },
+    },
+    safe(async ({ profile, refresh }) => {
+      const client = await getClient(profile);
+      const info = await detectBraider(client, { refresh });
+      if (refresh) braiderClients.clear();
+      return info ? { installed: true, ...info } : { installed: false };
+    }),
+  );
+
+  server.registerTool(
+    'braider_list_endpoints',
+    {
+      description:
+        'List configured Data Braider endpoints: code, description, endpoint type (Read Only | Per Record | Batch | Delta Read), and output format (Flat | Hierarchy).',
+      inputSchema: {
+        ...profileArg,
+        company: z.string().optional().describe('Company override for this call'),
+      },
+    },
+    safe(async ({ profile, company }) => (await getBraider(profile)).listEndpoints({ company })),
+  );
+
+  server.registerTool(
+    'braider_read',
+    {
+      description:
+        'Read data from a Data Braider endpoint. The double-encoded jsonResult payload is unwrapped — records come back as plain JSON. Flat endpoints return objects keyed "TableName.FieldName"; Hierarchy endpoints return nested {data, children} nodes. Paging is 1-based by page index.',
+      inputSchema: {
+        ...profileArg,
+        company: z.string().optional().describe('Company override for this call'),
+        code: z.string().describe('Endpoint code, e.g. "CUSTOMERS"'),
+        filters: braiderFilterSchema,
+        pageStart: z.number().int().positive().optional().describe('1-based page index'),
+        pageSize: z.number().int().positive().optional().describe('Top-level records per page'),
+        all: z.boolean().optional().describe('Fetch every page (bounded by the record count)'),
+        includeDiagnostics: z
+          .boolean()
+          .optional()
+          .describe('Include the diagnostics envelope when the endpoint emits one'),
+      },
+    },
+    safe(
+      async ({ profile, company, code, filters, pageStart, pageSize, all, includeDiagnostics }) => {
+        const braider = await getBraider(profile);
+        const result = await braider.readEndpoint(code, {
+          company,
+          filters: filters as BraiderFilter[] | undefined,
+          pageStart,
+          pageSize,
+          all,
+        });
+        return {
+          records: result.records,
+          hasMore: result.hasMore,
+          pageStart: result.pageStart,
+          pageSize: result.pageSize,
+          topLevelRecordCount: result.topLevelRecordCount,
+          ...(includeDiagnostics ? { diagnostics: result.diagnostics ?? null } : {}),
+        };
+      },
+    ),
+  );
+
+  server.registerTool(
+    'braider_write',
+    {
+      description:
+        'Submit records to a Data Braider write endpoint. Each record uses "TableName.FieldName" keys (see braider_get_schema for the exact names) plus an "Action": Insert | Update | Delete | Upsert; defaultAction fills records that omit it. Returns one result per record ({action, data} or {action: "delete", gravestonePK}).',
+      inputSchema: {
+        ...profileArg,
+        company: z.string().optional().describe('Company override for this call'),
+        code: z.string().describe('Write endpoint code'),
+        records: z
+          .array(z.record(z.unknown()))
+          .min(1)
+          .describe('Records with "Table.Field" keys and optional "Action"'),
+        defaultAction: z
+          .enum(['Insert', 'Update', 'Delete', 'Upsert'])
+          .optional()
+          .describe('Action applied to records without their own'),
+      },
+    },
+    safe(async ({ profile, company, code, records, defaultAction }) =>
+      (await getBraider(profile)).writeEndpoint(code, records as BraiderWriteRecord[], {
+        company,
+        defaultAction: defaultAction as BraiderWriteAction | undefined,
+      }),
+    ),
+  );
+
+  server.registerTool(
+    'braider_get_schema',
+    {
+      description:
+        'Per-endpoint field schema: the exact "TableName.FieldName" property names with types, required flags, and (on Braider 2.4+) field/table numbers and write-enabled markers. source="api" is exact; source="inferred" is sampled from data.',
+      inputSchema: {
+        ...profileArg,
+        company: z.string().optional().describe('Company override for this call'),
+        code: z.string().describe('Endpoint code'),
+      },
+    },
+    safe(async ({ profile, company, code }) =>
+      (await getBraider(profile)).getEndpointSchema(code, { company }),
+    ),
+  );
+
+  server.registerTool(
+    'braider_list_tables',
+    {
+      description:
+        'Tables available for Data Braider endpoint authoring (requires Braider 2.4+). Use before braider_create_endpoint to resolve table numbers/names.',
+      inputSchema: {
+        ...profileArg,
+        company: z.string().optional().describe('Company override for this call'),
+        search: z.string().optional().describe('Substring to match in table name or caption'),
+      },
+    },
+    safe(async ({ profile, company, search }) =>
+      (await getBraider(profile)).listAvailableTables({ company, search }),
+    ),
+  );
+
+  server.registerTool(
+    'braider_list_fields',
+    {
+      description:
+        'Fields of one table (numbers, names, types, PK markers) for Data Braider endpoint authoring (requires Braider 2.4+).',
+      inputSchema: {
+        ...profileArg,
+        company: z.string().optional().describe('Company override for this call'),
+        tableNo: z.number().int().describe('Table number, e.g. 18 for Customer'),
+      },
+    },
+    safe(async ({ profile, company, tableNo }) =>
+      (await getBraider(profile)).listAvailableFields(tableNo, { company }),
+    ),
+  );
+
+  server.registerTool(
+    'braider_create_endpoint',
+    {
+      description:
+        'Create a complete Data Braider endpoint remotely (requires Braider 2.4+): config header, source-table lines (fields auto-populate), and enabled fields. sourceTable accepts a table number or name; includeFields entries are field names/numbers or {field, writeEnabled, mandatory, filter, defaultValue, upsertMatch, manualFieldCaption} objects.',
+      inputSchema: {
+        ...profileArg,
+        company: z.string().optional().describe('Company override for this call'),
+        spec: z
+          .object({
+            code: z.string().max(20),
+            description: z.string().optional(),
+            endpointType: z.enum(['Read Only', 'Per Record', 'Batch']),
+            outputJsonType: z.enum(['Hierarchy', 'Flat']).optional(),
+            enabled: z.boolean().optional(),
+            hideFromLists: z.boolean().optional(),
+            pageSize: z.number().int().positive().optional(),
+            lines: z
+              .array(
+                z.object({
+                  sourceTable: z.union([z.number().int(), z.string()]),
+                  indentation: z.number().int().nonnegative().optional(),
+                  includeFields: z
+                    .array(
+                      z.union([
+                        z.string(),
+                        z.number().int(),
+                        z.object({
+                          field: z.union([z.string(), z.number().int()]),
+                          writeEnabled: z.boolean().optional(),
+                          mandatory: z.boolean().optional(),
+                          filter: z.string().optional(),
+                          defaultValue: z.string().optional(),
+                          upsertMatch: z.boolean().optional(),
+                          manualFieldCaption: z.string().optional(),
+                        }),
+                      ]),
+                    )
+                    .min(1),
+                }),
+              )
+              .min(1),
+          })
+          .describe('Endpoint specification'),
+      },
+    },
+    safe(async ({ profile, company, spec }) =>
+      (await getBraider(profile)).createEndpoint(spec as BraiderEndpointSpec, { company }),
+    ),
+  );
+
+  server.registerTool(
+    'braider_update_endpoint',
+    {
+      description:
+        'Update a Data Braider endpoint config header by code (requires Braider 2.4+). Enum fields accept plain names, e.g. endpointType "Per Record".',
+      inputSchema: {
+        ...profileArg,
+        company: z.string().optional().describe('Company override for this call'),
+        code: z.string().describe('Endpoint code'),
+        patch: z
+          .record(z.unknown())
+          .describe('Config header fields to change, e.g. {"enabled": true}'),
+      },
+    },
+    safe(async ({ profile, company, code, patch }) =>
+      (await getBraider(profile)).updateEndpoint(code, patch as Record<string, unknown>, {
+        company,
+      }),
+    ),
+  );
+
+  server.registerTool(
+    'braider_delete_endpoint',
+    {
+      description:
+        'Delete a Data Braider endpoint config and all its lines/fields/relations (requires Braider 2.4+). Irreversible.',
+      inputSchema: {
+        ...profileArg,
+        company: z.string().optional().describe('Company override for this call'),
+        code: z.string().describe('Endpoint code'),
+      },
+    },
+    safe(async ({ profile, company, code }) => {
+      await (await getBraider(profile)).deleteEndpoint(code, { company });
+      return { deleted: true, code };
+    }),
   );
 
   return server;

@@ -1,14 +1,19 @@
 import path from 'node:path';
 import {
+  BraiderClient,
+  type BraiderEndpoint,
   companyLabel,
   createClientForProfile,
   defaultConfigDir,
+  detectBraider,
   type EntitySetInfo,
   findCompany,
   MetadataCache,
   ProfileStore,
 } from '@navapi/core';
 import * as vscode from 'vscode';
+import { loadBraiderCache, saveBraiderCache } from './braider-cache.js';
+import { braiderEndpointIcon, braiderEndpointItem } from './braider-view.js';
 import { loadCompanies, saveCompanies } from './companies-cache.js';
 import { loadCounts } from './counts-cache.js';
 import { companyItem, entitySetItem, profileItem, routeItem, sortProfiles } from './model.js';
@@ -42,13 +47,26 @@ export interface EntitySetNode {
   lastCount?: number;
 }
 
+export interface BraiderEndpointNode {
+  kind: 'braiderEndpoint';
+  profileName: string;
+  routePath: string;
+  endpoint: BraiderEndpoint;
+}
+
 export interface HintNode {
   kind: 'hint';
-  hintFor: 'discover' | 'companies' | 'noProfile';
+  hintFor: 'discover' | 'companies' | 'noProfile' | 'braider';
   profileName?: string;
 }
 
-export type Node = ProfileNode | CompanyNode | RouteNode | EntitySetNode | HintNode;
+export type Node =
+  | ProfileNode
+  | CompanyNode
+  | RouteNode
+  | EntitySetNode
+  | BraiderEndpointNode
+  | HintNode;
 
 function store(): ProfileStore {
   return new ProfileStore(defaultConfigDir());
@@ -68,6 +86,13 @@ function hintItem(node: HintNode): vscode.TreeItem {
     const item = new vscode.TreeItem('Add a profile to get started…');
     item.iconPath = new vscode.ThemeIcon('add');
     item.command = { command: 'navapi.addProfile', title: 'Add Profile' };
+    item.contextValue = 'hint';
+    return item;
+  }
+  if (node.hintFor === 'braider') {
+    const item = new vscode.TreeItem('Data Braider not detected — refresh to re-check…');
+    item.iconPath = new vscode.ThemeIcon('sync');
+    item.command = { command: 'navapi.braider.refresh', title: 'Refresh Data Braider' };
     item.contextValue = 'hint';
     return item;
   }
@@ -180,6 +205,70 @@ export class CompaniesProvider extends BaseProvider<CompanyNode | HintNode> {
     item.contextValue = 'company';
     item.iconPath = new vscode.ThemeIcon(node.isDefault ? 'star-full' : 'building');
     item.command = { command: 'navapi.selectCompany', title: 'Use Company', arguments: [node] };
+    return item;
+  }
+}
+
+/**
+ * "Data Braider" section — the active profile's configured Braider endpoints.
+ * First expand fetches live and caches (configDir/braider); afterwards the
+ * section renders offline until a refresh.
+ */
+export class BraiderProvider extends BaseProvider<BraiderEndpointNode | HintNode> {
+  /** Forces the next getChildren to refetch instead of using the cache. */
+  private stale = false;
+
+  markStale(): void {
+    this.stale = true;
+  }
+
+  async getChildren(
+    node?: BraiderEndpointNode | HintNode,
+  ): Promise<(BraiderEndpointNode | HintNode)[]> {
+    if (node) return [];
+    const profileName = await activeProfileName();
+    if (!profileName) return [{ kind: 'hint', hintFor: 'noProfile' }];
+
+    let cached = this.stale ? undefined : await loadBraiderCache(profileName);
+    if (!cached) {
+      this.stale = false;
+      try {
+        const client = await createClientForProfile(profileName);
+        const info = await detectBraider(client);
+        if (!info) return [{ kind: 'hint', hintFor: 'braider', profileName }];
+        const endpoints = await new BraiderClient(client, info).listEndpoints();
+        await saveBraiderCache(profileName, info, endpoints);
+        cached = { fetchedAt: new Date().toISOString(), info, endpoints };
+      } catch (err) {
+        vscode.window.showErrorMessage(
+          `navapi: could not load Data Braider endpoints for ${profileName}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        return [{ kind: 'hint', hintFor: 'braider', profileName }];
+      }
+    }
+    return cached.endpoints.map((endpoint) => ({
+      kind: 'braiderEndpoint',
+      profileName,
+      routePath: cached.info.routePath,
+      endpoint,
+    }));
+  }
+
+  getTreeItem(node: BraiderEndpointNode | HintNode): vscode.TreeItem {
+    if (node.kind === 'hint') return hintItem(node);
+    const info = braiderEndpointItem(node.endpoint);
+    const item = new vscode.TreeItem(info.label, vscode.TreeItemCollapsibleState.None);
+    item.description = info.description;
+    item.tooltip = info.tooltip;
+    item.contextValue = 'braiderEndpoint';
+    item.iconPath = new vscode.ThemeIcon(braiderEndpointIcon(node.endpoint.endpointType));
+    item.command = {
+      command: 'navapi.braider.open',
+      title: 'Browse Endpoint Data',
+      arguments: [node],
+    };
     return item;
   }
 }

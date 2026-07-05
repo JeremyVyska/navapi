@@ -6,6 +6,37 @@ export {
   type TokenProvider,
 } from './auth.js';
 export type { BatchRequest, BatchResponse } from './batch.js';
+export {
+  BRAIDER_GROUP,
+  BRAIDER_PUBLISHER,
+  BRAIDER_WRITE_ACTIONS,
+  type BraiderCallOptions,
+  BraiderClient,
+  type BraiderConfigSets,
+  type BraiderEndpoint,
+  type BraiderEndpointSchema,
+  type BraiderEndpointSpec,
+  type BraiderFieldSpec,
+  type BraiderFilter,
+  type BraiderHierarchyNode,
+  type BraiderInfo,
+  type BraiderLineSpec,
+  type BraiderReadOptions,
+  type BraiderReadResult,
+  type BraiderSchemaProperty,
+  type BraiderWriteAction,
+  type BraiderWriteOptions,
+  type BraiderWriteRecord,
+  type BraiderWriteResultEntry,
+  decodeODataName,
+  detectBraider,
+  encodeFilterJson,
+  encodeJsonInput,
+  encodeODataName,
+  parseBraiderFilterSpec,
+  parseJsonResult,
+  resolveConfigSets,
+} from './braider.js';
 export { defaultConfigDir, MetadataCache } from './cache.js';
 export {
   BcClient,
