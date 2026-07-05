@@ -1,7 +1,7 @@
 {
   "name": "navapi-vscode",
   "displayName": "navapi — Business Central APIs",
-  "description": "Browse Business Central environments, API routes, and entities. Tree views, one-click requests, schema browsing — for humans who like buttons.",
+  "description": "Browse Business Central environments, API routes, and entities — with native Data Braider support. Tree views, a query builder, schema browsing, endpoint read/write — for humans who like buttons.",
   "version": "0.1.0",
   "icon": "media/icon.png",
   "license": "MIT",
@@ -24,7 +24,10 @@
     "dynamics 365",
     "odata",
     "erp",
-    "navision"
+    "navision",
+    "data braider",
+    "databraider",
+    "api factory"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [],

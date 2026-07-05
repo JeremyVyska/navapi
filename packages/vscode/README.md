@@ -1,6 +1,18 @@
 # navapi-vscode
 
-Business Central environments, API routes, and entities in your sidebar — the buttons-for-humans face of [navapi](https://github.com/jvyska/navapi). Thin wrapper over `@navapi/core`; profiles are shared with the `navapi` CLI and MCP server.
+Business Central environments, API routes, and entities in your sidebar — the buttons-for-humans face of [navapi](https://github.com/JeremyVyska/navapi). Plus **native support for [Data Braider](https://github.com/Spare-Brained-Community/SBI-DataBraider)**, the free community no-code API factory for BC. Thin wrapper over `@navapi/core`; profiles are shared with the `navapi` CLI and MCP server.
+
+## 🧭 Data Braider
+
+[**Data Braider**](https://github.com/Spare-Brained-Community/SBI-DataBraider) is a free, community-maintained extension that turns Business Central data into configurable JSON API endpoints — no AL code required. When it's installed in your environment, navapi grows a dedicated **Data Braider** sidebar section so you can work with those endpoints as first-class objects:
+
+- **Endpoint browser** — every configured endpoint, labelled by type (Read Only / Per Record / Batch / Delta Read) and output format.
+- **Read** endpoint data in a grid using Data Braider's own filters (BC filter syntax) and paging — flat output as a table, hierarchical output as expandable nested tables. navapi transparently unwraps the double-encoded JSON payload, so you just see clean records.
+- **Write** to endpoints — Insert / Update / Delete / Upsert.
+- **Schema** — the exact `Table.Field` shape of each endpoint.
+- **New Endpoint** *(Data Braider 2.4+)* — author a complete endpoint from inside VS Code with searchable table and multi-select field pickers; you never hand-type a table or field number.
+
+Older Data Braider installs get discovery, read, write, and inferred schemas today; the authoring flow and live schemas light up automatically once Data Braider's config API (2.4+) is present — no navapi update needed.
 
 ## What it does
 
