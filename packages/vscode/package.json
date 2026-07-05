@@ -3,6 +3,7 @@
   "displayName": "navapi — Business Central APIs",
   "description": "Browse Business Central environments, API routes, and entities. Tree views, one-click requests, schema browsing — for humans who like buttons.",
   "version": "0.1.0",
+  "icon": "media/icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -254,7 +255,8 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
-    "package": "node scripts/copy-keyring.mjs && vsce package --no-dependencies --allow-missing-repository"
+    "package": "node scripts/copy-keyring.mjs && vsce package --no-dependencies --allow-missing-repository",
+    "package:all": "node scripts/package-all.mjs"
   },
   "devDependencies": {
     "@napi-rs/keyring": "^1.1.0",

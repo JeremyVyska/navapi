@@ -3,5 +3,6 @@
 !dist/node_modules/**
 !media/**
 !README.md
+!CHANGELOG.md
 !LICENSE
 !package.json
