@@ -1,5 +1,9 @@
 # @navapi/cli
 
+## 0.2.0
+
+- **`navapi braider`** command tree for Data Braider: `status`, `ls`, `get` (with a `Table.Field=filter` DSL, paging, `--all`, `--diagnostics`, `--raw`), `write`, `schema`, `tables`/`fields` lookups, and `config ls|get|create|update|delete` for remote endpoint authoring. Reads return clean parsed records; `--json` stays a stable bare array.
+
 ## 0.1.0-alpha.1
 
 First public alpha. Installs the `navapi` command:

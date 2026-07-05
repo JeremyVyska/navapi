@@ -1,5 +1,9 @@
 # @navapi/mcp
 
+## 0.2.0
+
+- **10 `braider_*` tools** for Data Braider (24 tools total): `braider_status`, `braider_list_endpoints`, `braider_read` (filters + paging), `braider_write`, `braider_get_schema`, `braider_list_tables`, `braider_list_fields`, `braider_create_endpoint`, `braider_update_endpoint`, `braider_delete_endpoint`. Tool descriptions document the `"Table.Field"` key and `Action` write conventions for agents.
+
 ## 0.1.0-alpha.1
 
 First public alpha. 14 typed tools over stdio, sharing profiles with the CLI:

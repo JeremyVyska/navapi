@@ -24,9 +24,9 @@ Postman is a great HTTP client. It is *not* a great **Business Central** client.
 ## Install
 
 ```bash
-npm i -g @navapi/cli@alpha     # the `navapi` command
-npm i @navapi/core@alpha       # the library
-npm i -g @navapi/mcp@alpha     # the MCP server (`navapi-mcp`)
+npm i -g @navapi/cli     # the `navapi` command
+npm i @navapi/core       # the library
+npm i -g @navapi/mcp     # the MCP server (`navapi-mcp`)
 ```
 
 > The bare `navapi` npm name is squatted by an empty placeholder — the CLI lives at `@navapi/cli`, but the command it installs is still `navapi`.
@@ -111,7 +111,7 @@ navapi/
 
 ## Status
 
-🚧 **Pre-alpha, but very much alive.** All four faces are built and tested (100+ tests) against a mock BC server; nothing is published to npm or the Marketplace yet. The VS Code extension ships as a local `.vsix` (`pnpm --filter navapi-vscode package`).
+🚀 **0.2.0 — live.** All four faces are built and tested (180+ tests) against a mock BC server, with native Data Braider support and GitHub Copilot (MCP) integration in the VS Code extension. The extension is on the VS Code Marketplace; `@navapi/core`, `@navapi/cli`, and `@navapi/mcp` publish to npm at 0.2.0.
 
 Roadmap:
 
@@ -127,7 +127,7 @@ Roadmap:
 - [x] OS-keychain secret backend (`@napi-rs/keyring`, layered over the file store with auto-migration; `navapi secrets status|migrate`; keychain binding ships inside the `.vsix`)
 - [x] Native Data Braider support across all four faces (discovery, parsed reads/writes, live schema on Braider 2.4+, remote endpoint authoring, VS Code section + guided endpoint creation, `braider_*` MCP tools)
 - [ ] Docs site
-- [ ] `0.1.0-alpha.1` to npm + `.vsix` to the Marketplace
+- [x] `0.2.0` to npm + the VS Code Marketplace
 
 ## What Ifs
 
