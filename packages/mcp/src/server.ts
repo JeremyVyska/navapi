@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   type BatchRequest,
@@ -98,7 +99,8 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
     return client;
   }
 
-  const server = new McpServer({ name: 'navapi', version: '0.0.0' });
+  const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
+  const server = new McpServer({ name: 'navapi', version });
 
   server.registerTool(
     'list_profiles',

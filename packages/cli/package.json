@@ -1,8 +1,12 @@
 {
-  "name": "navapi",
-  "version": "0.0.0",
-  "description": "The Business Central API CLI that doesn't make you cry. Discovery-first, agent-friendly, ETag-safe.",
+  "name": "@navapi/cli",
+  "version": "0.1.0-alpha.1",
+  "description": "The Business Central API CLI that doesn't make you cry. Discovery-first, agent-friendly, ETag-safe. Installs the `navapi` command.",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/JeremyVyska/navapi.git",

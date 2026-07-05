@@ -21,6 +21,16 @@ If you've ever spent 40 minutes re-configuring a Postman collection for the four
 
 Postman is a great HTTP client. It is *not* a great **Business Central** client. navapi knows about companies, environments, ETags, bound actions, `$batch`, and the `$metadata` document. You should not have to.
 
+## Install
+
+```bash
+npm i -g @navapi/cli@alpha     # the `navapi` command
+npm i @navapi/core@alpha       # the library
+npm i -g @navapi/mcp@alpha     # the MCP server (`navapi-mcp`)
+```
+
+> The bare `navapi` npm name is squatted by an empty placeholder — the CLI lives at `@navapi/cli`, but the command it installs is still `navapi`.
+
 ## What it looks like
 
 ```bash

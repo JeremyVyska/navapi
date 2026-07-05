@@ -1,8 +1,12 @@
 {
   "name": "@navapi/core",
-  "version": "0.0.0",
+  "version": "0.1.0-alpha.1",
   "description": "Business Central API toolkit core: auth, HTTP, ETag handling, $metadata discovery, pagination, retries.",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/JeremyVyska/navapi.git",

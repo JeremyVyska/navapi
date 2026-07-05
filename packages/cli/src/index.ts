@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { HttpError, NavApiError } from '@navapi/core';
 import { Command } from 'commander';
 import pc from 'picocolors';
@@ -10,10 +11,12 @@ import { registerSecrets } from './commands/secrets.js';
 
 const program = new Command();
 
+const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
+
 program
   .name('navapi')
   .description('The Business Central API toolkit that doesn’t make you cry. 🧭')
-  .version('0.0.0')
+  .version(version)
   .option('-p, --profile <name>', 'Profile to use (default: NAVAPI_PROFILE or stored default)');
 
 registerProfile(program);
