@@ -11,7 +11,7 @@
     "directory": "packages/vscode"
   },
   "private": true,
-  "publisher": "jeremy-vyska",
+  "publisher": "jeremyvyska",
   "engines": {
     "vscode": "^1.90.0",
     "node": ">=20"
