@@ -1,0 +1,6 @@
+# Keep LF everywhere (biome formats/asserts LF; Windows runners default to
+# autocrlf=true and would otherwise fail lint on checkout).
+* text=auto eol=lf
+*.png binary
+*.node binary
+*.vsix binary
