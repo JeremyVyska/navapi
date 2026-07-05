@@ -256,7 +256,8 @@
     "dev": "tsup --watch",
     "test": "vitest run",
     "package": "node scripts/copy-keyring.mjs && vsce package --no-dependencies --allow-missing-repository",
-    "package:all": "node scripts/package-all.mjs"
+    "package:all": "node scripts/package-all.mjs",
+    "package:universal": "node scripts/package-all.mjs universal"
   },
   "devDependencies": {
     "@napi-rs/keyring": "^1.1.0",

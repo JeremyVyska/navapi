@@ -81,41 +81,63 @@ function fetchBinding(bindingPkg) {
   return dest;
 }
 
-// 1. Build the extension bundle once (identical across targets).
-console.log('▶ building extension bundle…');
-run(process.execPath, [require.resolve('tsup/dist/cli-default.js')]);
-
-// 2. Package per target.
-rmSync(vsixOut, { recursive: true, force: true });
-mkdirSync(vsixOut, { recursive: true });
-const built = [];
-for (const [target, bindingPkg] of Object.entries(TARGETS)) {
-  console.log(`\n▶ ${target}  (${bindingPkg})`);
-  const bindingDir = fetchBinding(bindingPkg);
-
-  // Stage a clean dist/node_modules: main keyring package + this one binding.
+/** Stages the main keyring package + the named bindings into dist/node_modules. */
+function stageBindings(bindingPkgs) {
   rmSync(distNodeModules, { recursive: true, force: true });
   const napiDir = path.join(distNodeModules, '@napi-rs');
   mkdirSync(napiDir, { recursive: true });
   cpSync(keyringSrc, path.join(napiDir, 'keyring'), { recursive: true, dereference: true });
-  cpSync(bindingDir, path.join(napiDir, bindingPkg.split('/')[1]), {
-    recursive: true,
-    dereference: true,
-  });
+  for (const bindingPkg of bindingPkgs) {
+    cpSync(fetchBinding(bindingPkg), path.join(napiDir, bindingPkg.split('/')[1]), {
+      recursive: true,
+      dereference: true,
+    });
+  }
+}
 
-  const outFile = path.join(vsixOut, `navapi-vscode-${target}-${pkg.version}.vsix`);
+// 1. Build the extension bundle once (identical across targets).
+console.log('▶ building extension bundle…');
+run(process.execPath, [require.resolve('tsup/dist/cli-default.js')]);
+
+rmSync(vsixOut, { recursive: true, force: true });
+mkdirSync(vsixOut, { recursive: true });
+const built = [];
+
+if (process.argv.includes('universal')) {
+  // 2u. One universal package bundling every binding — installs and works on
+  // any OS (the loader picks the right one at runtime). Larger, but a single
+  // file that uploads cleanly through the Marketplace web UI.
+  console.log('\n▶ universal (all bindings)');
+  stageBindings(Object.values(TARGETS));
+  const outFile = path.join(vsixOut, `navapi-vscode-${pkg.version}.vsix`);
   run(process.execPath, [
     vsceBin,
     'package',
-    '--target',
-    target,
     '--no-dependencies',
     '--allow-missing-repository',
     '-o',
     outFile,
   ]);
   built.push(outFile);
+} else {
+  // 2. Package per target — smaller downloads, needs `vsce publish --target`.
+  for (const [target, bindingPkg] of Object.entries(TARGETS)) {
+    console.log(`\n▶ ${target}  (${bindingPkg})`);
+    stageBindings([bindingPkg]);
+    const outFile = path.join(vsixOut, `navapi-vscode-${target}-${pkg.version}.vsix`);
+    run(process.execPath, [
+      vsceBin,
+      'package',
+      '--target',
+      target,
+      '--no-dependencies',
+      '--allow-missing-repository',
+      '-o',
+      outFile,
+    ]);
+    built.push(outFile);
+  }
 }
 
-console.log(`\n✔ built ${built.length} platform packages in ${vsixOut}:`);
+console.log(`\n✔ built ${built.length} package(s) in ${vsixOut}:`);
 for (const f of readdirSync(vsixOut)) console.log(`  ${f}`);
