@@ -3,6 +3,22 @@
 All notable changes to the **navapi** extension are documented here. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.2.0
+
+### Added
+
+- **GitHub Copilot integration (MCP).** The extension now registers navapi's
+  Model Context Protocol server with VS Code, so Copilot's agent mode gets
+  every navapi tool — Business Central discovery, records CRUD, `$batch`,
+  bound actions, and the full **Data Braider** tool set — with no `mcp.json`
+  setup. The server is scoped to your active profile and re-scopes
+  automatically when you switch profiles in the sidebar.
+
+### Changed
+
+- Minimum VS Code version is now **1.101** (required for the MCP server
+  definition provider API).
+
 ## 0.1.1
 
 - Marketplace listing now surfaces the native **Data Braider** support — added

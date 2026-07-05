@@ -2,7 +2,7 @@
   "name": "navapi-vscode",
   "displayName": "navapi — Business Central APIs",
   "description": "Browse Business Central environments, API routes, and entities — with native Data Braider support. Tree views, a query builder, schema browsing, endpoint read/write — for humans who like buttons.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "icon": "media/icon.png",
   "license": "MIT",
   "repository": {
@@ -13,7 +13,7 @@
   "private": true,
   "publisher": "jeremyvyska",
   "engines": {
-    "vscode": "^1.90.0",
+    "vscode": "^1.101.0",
     "node": ">=20"
   },
   "categories": [
@@ -32,6 +32,12 @@
   "main": "./dist/extension.js",
   "activationEvents": [],
   "contributes": {
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "navapi.mcp",
+        "label": "navapi — Business Central"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
@@ -263,10 +269,13 @@
     "package:universal": "node scripts/package-all.mjs universal"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
     "@napi-rs/keyring": "^1.1.0",
     "@navapi/core": "workspace:*",
+    "@navapi/mcp": "workspace:*",
     "@types/node": "^24.0.0",
-    "@types/vscode": "~1.90.0",
+    "@types/vscode": "~1.101.0",
+    "zod": "^3.25.0",
     "@vscode/vsce": "^3.3.0",
     "jsdom": "^29.1.1",
     "tsup": "^8.5.0",

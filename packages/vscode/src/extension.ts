@@ -13,6 +13,7 @@ import { hasBraiderRouteCached, loadBraiderCache } from './braider-cache.js';
 import { BraiderPanel } from './braider-panel.js';
 import { braiderSchemaDocument } from './braider-view.js';
 import { saveCompanies } from './companies-cache.js';
+import { mcpServerEnv } from './mcp-config.js';
 import { schemaDocument } from './model.js';
 import { ProfileFormPanel } from './profile-form.js';
 import { RecordsPanel } from './records-panel.js';
@@ -346,6 +347,10 @@ export function activate(context: vscode.ExtensionContext): void {
     treeDataProvider: braider,
   });
 
+  // Fired when the active profile changes so Copilot re-reads the MCP server
+  // definition (which is scoped to that profile).
+  const mcpChanged = new vscode.EventEmitter<void>();
+
   const ui: Ui = {
     async refresh() {
       profiles.refresh();
@@ -365,11 +370,38 @@ export function activate(context: vscode.ExtensionContext): void {
         'navapi:braiderConfigApi',
         cached?.info.level === 'config',
       );
+      mcpChanged.fire();
     },
   };
   void ui.refresh();
 
+  // Offer the navapi MCP server to Copilot agent mode (VS Code >= 1.101). The
+  // server runs as a subprocess VS Code launches, scoped to the active profile,
+  // so Copilot gets every navapi + Data Braider tool with zero mcp.json setup.
+  if (typeof vscode.lm?.registerMcpServerDefinitionProvider === 'function') {
+    const serverPath = context.asAbsolutePath('dist/mcp-server.mjs');
+    const extVersion = (context.extension.packageJSON as { version?: string }).version;
+    context.subscriptions.push(
+      vscode.lm.registerMcpServerDefinitionProvider('navapi.mcp', {
+        onDidChangeMcpServerDefinitions: mcpChanged.event,
+        provideMcpServerDefinitions: async () => {
+          const profile = await activeProfileName();
+          return [
+            new vscode.McpStdioServerDefinition(
+              'navapi — Business Central',
+              process.execPath,
+              [serverPath],
+              mcpServerEnv(profile, defaultConfigDir()),
+              extVersion,
+            ),
+          ];
+        },
+      }),
+    );
+  }
+
   context.subscriptions.push(
+    mcpChanged,
     profilesView,
     companiesView,
     endpointsView,

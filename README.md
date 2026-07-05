@@ -8,8 +8,8 @@
 
 - 📚 **`@navapi/core`** — TypeScript library. Auth, HTTP, ETag handling, `$metadata` discovery, pagination, retries.
 - 🖥️ **`navapi` CLI** — because typing beats clicking. Agent-friendly with stable `--json` output.
-- 🧩 **`navapi-vscode`** — Profiles/Companies/Endpoint Browser in the sidebar, a records grid with a BC-style query builder, server-side sort/paging, FastTab detail panes, and right-click filtering. For humans who like buttons.
-- 🤖 **`@navapi/mcp`** — Model Context Protocol server: 14 typed tools, so agents get discovery, CRUD, actions, `$batch`, and paging without shelling out.
+- 🧩 **`navapi-vscode`** — Profiles/Companies/Endpoint Browser in the sidebar, a records grid with a BC-style query builder, server-side sort/paging, FastTab detail panes, and right-click filtering. Registers the MCP server for **GitHub Copilot agent mode** out of the box. For humans who like buttons.
+- 🤖 **`@navapi/mcp`** — Model Context Protocol server: 24 typed tools (incl. the full Data Braider set), so agents get discovery, CRUD, actions, `$batch`, paging, and Data Braider read/write/authoring without shelling out.
 
 > "NAV lives. Now with better verbs."
 
@@ -121,7 +121,8 @@ Roadmap:
 - [x] `navapi` CLI: `profile`, `get`, `post`, `patch`, `delete`, `discover` (+ `routes`, `ls`, `companies`)
 - [x] `@navapi/core`: `$batch` support (JSON batch, `{company}` substitution, atomicity groups)
 - [x] `@navapi/core`: bound actions (`Microsoft.NAV.*`, namespace-qualified from cached metadata)
-- [x] `@navapi/mcp`: MCP server exposing typed tools (14 tools incl. navigation + real pagination; profiles shared with the CLI)
+- [x] `@navapi/mcp`: MCP server exposing typed tools (24 tools incl. navigation, real pagination, and the Data Braider tool set; profiles shared with the CLI)
+- [x] `navapi-vscode`: registers the MCP server for GitHub Copilot agent mode (VS Code 1.101+), scoped to the active profile
 - [x] `navapi-vscode`: sidebar sections (Profiles / Companies / Endpoint Browser with live record counts), records grid (server-side sort + paging via `odata.maxpagesize`, query builder for `$filter`/`$select`/`$count`, copyable query URL, BC-style right-click filtering, FastTab detail panes with lazy-loaded navigations), profile add/edit form with Test Connection
 - [x] OS-keychain secret backend (`@napi-rs/keyring`, layered over the file store with auto-migration; `navapi secrets status|migrate`; keychain binding ships inside the `.vsix`)
 - [x] Native Data Braider support across all four faces (discovery, parsed reads/writes, live schema on Braider 2.4+, remote endpoint authoring, VS Code section + guided endpoint creation, `braider_*` MCP tools)

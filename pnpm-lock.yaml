@@ -90,18 +90,24 @@ importers:
 
   packages/vscode:
     devDependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.12.0
+        version: 1.29.0(zod@3.25.76)
       '@napi-rs/keyring':
         specifier: ^1.1.0
         version: 1.3.0
       '@navapi/core':
         specifier: workspace:*
         version: link:../core
+      '@navapi/mcp':
+        specifier: workspace:*
+        version: link:../mcp
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.2
       '@types/vscode':
-        specifier: ~1.90.0
-        version: 1.90.0
+        specifier: ~1.101.0
+        version: 1.101.0
       '@vscode/vsce':
         specifier: ^3.3.0
         version: 3.9.2
@@ -117,6 +123,9 @@ importers:
       vitest:
         specifier: ^3.2.0
         version: 3.2.6(@types/node@24.13.2)(jsdom@29.1.1)
+      zod:
+        specifier: ^3.25.0
+        version: 3.25.76
 
 packages:
 
@@ -1033,8 +1042,8 @@ packages:
   '@types/sarif@2.1.7':
     resolution: {integrity: sha512-kRz0VEkJqWLf1LLVN4pT1cg1Z9wAuvI6L97V3m2f5B76Tg8d413ddvLBPTEHAZJlnn4XSvu0FkZtViCQGVyrXQ==}
 
-  '@types/vscode@1.90.0':
-    resolution: {integrity: sha512-oT+ZJL7qHS9Z8bs0+WKf/kQ27qWYR3trsXpq46YDjFqBsMLG4ygGGjPaJ2tyrH0wJzjOEmDyg9PDJBBhWg9pkQ==}
+  '@types/vscode@1.101.0':
+    resolution: {integrity: sha512-ZWf0IWa+NGegdW3iU42AcDTFHWW7fApLdkdnBqwYEtHVIBGbTu0ZNQKP/kX3Ds/uMJXIMQNAojHR4vexCEEz5Q==}
 
   '@typespec/ts-http-runtime@0.3.6':
     resolution: {integrity: sha512-jIXhD0eWQ1JA6ln/5Dltyx22UxWNrw0hZmhy2rlv6m6KgF7kplHx3g0fzi09lNmTJQRR91OlemYp3xFnvDK9og==}
@@ -3660,7 +3669,7 @@ snapshots:
 
   '@types/sarif@2.1.7': {}
 
-  '@types/vscode@1.90.0': {}
+  '@types/vscode@1.101.0': {}
 
   '@typespec/ts-http-runtime@0.3.6':
     dependencies:

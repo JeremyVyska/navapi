@@ -5,10 +5,11 @@
  * PNG encoder, so there are no native/image-tool dependencies. Re-run after
  * changing the mark: `node scripts/make-icon.mjs`.
  */
-import { deflateSync } from 'node:zlib';
+
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { deflateSync } from 'node:zlib';
 
 const SIZE = 128;
 const SS = 4; // supersample factor

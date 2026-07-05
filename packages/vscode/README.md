@@ -1,6 +1,16 @@
 # navapi-vscode
 
-Business Central environments, API routes, and entities in your sidebar — the buttons-for-humans face of [navapi](https://github.com/JeremyVyska/navapi). Plus **native support for [Data Braider](https://github.com/Spare-Brained-Community/SBI-DataBraider)**, the free community no-code API factory for BC. Thin wrapper over `@navapi/core`; profiles are shared with the `navapi` CLI and MCP server.
+Business Central environments, API routes, and entities in your sidebar — the buttons-for-humans face of [navapi](https://github.com/JeremyVyska/navapi). Plus **native support for [Data Braider](https://github.com/Spare-Brained-Community/SBI-DataBraider)** (the free community no-code API factory for BC) and **built-in GitHub Copilot tools** via MCP. Thin wrapper over `@navapi/core`; profiles are shared with the `navapi` CLI and MCP server.
+
+## 🤖 GitHub Copilot, built in
+
+The extension registers navapi's **Model Context Protocol** server with VS Code, so **Copilot agent mode gets navapi's tools out of the box** — no `mcp.json`, no separate install. Ask Copilot to "list the customers changed this week" or "read the CUSTOMERS Data Braider endpoint" and it calls the real APIs through navapi:
+
+- Every navapi tool is available: BC discovery, record CRUD, `$batch`, bound actions, and the full **Data Braider** tool set (read, write, schema, endpoint authoring).
+- The server is **scoped to your active profile** — click a different profile in the sidebar and Copilot follows, so it always talks to the environment you're looking at.
+- Secrets stay in your OS keychain; the same profiles power the CLI and the sidebar.
+
+Requires VS Code 1.101+ (for the MCP provider API).
 
 ## 🧭 Data Braider
 
