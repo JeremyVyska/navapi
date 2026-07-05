@@ -51,6 +51,15 @@ The extension registers navapi's **Model Context Protocol** server with VS Code,
 
 Requires VS Code 1.101+ (for the MCP provider API).
 
+## Command line & MCP tools
+
+This extension is one of four faces of navapi that share the same profiles and secrets (in `~/.navapi`) — so anything you set up here works everywhere:
+
+- **`@navapi/cli`** — the `navapi` command: route discovery, record CRUD, `$batch`, bound actions, and Data Braider read/write/authoring, with stable `--json` output for scripts and agents. `npm i -g @navapi/cli`
+- **`@navapi/mcp`** — a standalone Model Context Protocol server (`navapi-mcp`) for any MCP client, if you want navapi's tools outside VS Code. `npm i -g @navapi/mcp` (inside VS Code, Copilot already gets them — see above).
+
+Source, the `@navapi/core` library, and full docs live in the repo: **[github.com/JeremyVyska/navapi](https://github.com/JeremyVyska/navapi)**.
+
 ## Development
 
 ```bash

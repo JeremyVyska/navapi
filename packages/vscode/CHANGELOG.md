@@ -6,9 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 ## 0.2.1
 
 - Marketplace listing: reorganized so the core functionality leads, with the
-  Data Braider and GitHub Copilot sections below it, and added screenshots of
-  the records grid, query builder, detail panes, and profile form. No code
-  changes.
+  Data Braider and GitHub Copilot sections below it; added screenshots of the
+  records grid, query builder, detail panes, and profile form; and added a
+  "Command line & MCP tools" section pointing to the `@navapi/cli` and
+  `@navapi/mcp` packages. No code changes.
 
 ## 0.2.0
 
