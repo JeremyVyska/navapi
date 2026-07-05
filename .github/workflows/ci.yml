@@ -17,7 +17,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # standalone: pnpm 11 needs Node >= 22.13 itself; the self-contained
+      # binary lets us still run the test matrix on our minimum (Node 20).
       - uses: pnpm/action-setup@v4
+        with:
+          standalone: true
 
       - uses: actions/setup-node@v4
         with:
@@ -43,6 +47,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
+        with:
+          standalone: true
 
       - uses: actions/setup-node@v4
         with:

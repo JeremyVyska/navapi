@@ -137,6 +137,18 @@ describe('LayeredSecretStore', () => {
 });
 
 describe('resolveSecretStore', () => {
+  // CI exports NAVAPI_SECRET_BACKEND=file as a safety net; these tests
+  // control the variable themselves.
+  let savedBackend: string | undefined;
+  beforeEach(() => {
+    savedBackend = process.env.NAVAPI_SECRET_BACKEND;
+    delete process.env.NAVAPI_SECRET_BACKEND;
+  });
+  afterEach(() => {
+    if (savedBackend === undefined) delete process.env.NAVAPI_SECRET_BACKEND;
+    else process.env.NAVAPI_SECRET_BACKEND = savedBackend;
+  });
+
   it('uses the keychain (layered) when a keyring is available', async () => {
     const { factory } = fakeKeyring();
     const resolved = await resolveSecretStore(tmpDir, { keyringFactory: factory });
