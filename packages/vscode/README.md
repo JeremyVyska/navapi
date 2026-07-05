@@ -1,28 +1,8 @@
 # navapi-vscode
 
-Business Central environments, API routes, and entities in your sidebar — the buttons-for-humans face of [navapi](https://github.com/JeremyVyska/navapi). Plus **native support for [Data Braider](https://github.com/Spare-Brained-Community/SBI-DataBraider)** (the free community no-code API factory for BC) and **built-in GitHub Copilot tools** via MCP. Thin wrapper over `@navapi/core`; profiles are shared with the `navapi` CLI and MCP server.
+Business Central environments, API routes, and entities in your sidebar — the buttons-for-humans face of [navapi](https://github.com/JeremyVyska/navapi). Thin wrapper over `@navapi/core`; profiles are shared with the `navapi` CLI and MCP server. Includes **native [Data Braider](https://github.com/Spare-Brained-Community/SBI-DataBraider) support** and **built-in GitHub Copilot tools** — see below.
 
-## 🤖 GitHub Copilot, built in
-
-The extension registers navapi's **Model Context Protocol** server with VS Code, so **Copilot agent mode gets navapi's tools out of the box** — no `mcp.json`, no separate install. Ask Copilot to "list the customers changed this week" or "read the CUSTOMERS Data Braider endpoint" and it calls the real APIs through navapi:
-
-- Every navapi tool is available: BC discovery, record CRUD, `$batch`, bound actions, and the full **Data Braider** tool set (read, write, schema, endpoint authoring).
-- The server is **scoped to your active profile** — click a different profile in the sidebar and Copilot follows, so it always talks to the environment you're looking at.
-- Secrets stay in your OS keychain; the same profiles power the CLI and the sidebar.
-
-Requires VS Code 1.101+ (for the MCP provider API).
-
-## 🧭 Data Braider
-
-[**Data Braider**](https://github.com/Spare-Brained-Community/SBI-DataBraider) is a free, community-maintained extension that turns Business Central data into configurable JSON API endpoints — no AL code required. When it's installed in your environment, navapi grows a dedicated **Data Braider** sidebar section so you can work with those endpoints as first-class objects:
-
-- **Endpoint browser** — every configured endpoint, labelled by type (Read Only / Per Record / Batch / Delta Read) and output format.
-- **Read** endpoint data in a grid using Data Braider's own filters (BC filter syntax) and paging — flat output as a table, hierarchical output as expandable nested tables. navapi transparently unwraps the double-encoded JSON payload, so you just see clean records.
-- **Write** to endpoints — Insert / Update / Delete / Upsert.
-- **Schema** — the exact `Table.Field` shape of each endpoint.
-- **New Endpoint** *(Data Braider 2.4+)* — author a complete endpoint from inside VS Code with searchable table and multi-select field pickers; you never hand-type a table or field number.
-
-Older Data Braider installs get discovery, read, write, and inferred schemas today; the authoring flow and live schemas light up automatically once Data Braider's config API (2.4+) is present — no navapi update needed.
+![navapi in VS Code: Profiles, Companies, and Endpoint Browser in the sidebar, with a live records grid showing 50 of 337 records](https://raw.githubusercontent.com/JeremyVyska/navapi/main/docs/screenshots/QueryView.png)
 
 ## What it does
 
@@ -37,10 +17,45 @@ Older Data Braider installs get discovery, read, write, and inferred schemas tod
 - **Show Schema** — keys, properties with types/maxLength, navigation properties, bound actions.
 - **Profile management** — add/edit via the form, set default, remove; the current company shows next to the environment in the tree.
 
+**Schema-driven query builder** — pick `$filter` conditions and `$select` fields from the entity's own schema, hand-edit the generated OData, and copy the exact request URL:
+
+![The query builder: filter conditions, $select field checkboxes, the generated $filter expression, and a copyable Query URL, over a filtered records grid](https://raw.githubusercontent.com/JeremyVyska/navapi/main/docs/screenshots/QueryBuilder.png)
+
+**FastTab detail panes & right-click filtering** — click a row for a BC-style detail pane with a tab per navigation property; right-click any cell to filter to that value:
+
+![A record's FastTab detail pane with navigation-property tabs (customer, currency, salesOrderLines…) and the right-click Filter / Filter to This Value / Copy Value menu](https://raw.githubusercontent.com/JeremyVyska/navapi/main/docs/screenshots/Navigations.png)
+
+**Profiles with Test Connection** — one form, every field visible, validated and connection-tested before you save:
+
+![The Add Profile form: profile name, tenant, client id/secret, environment, default company, and Test Connection / Save Profile buttons](https://raw.githubusercontent.com/JeremyVyska/navapi/main/docs/screenshots/AddProfile.png)
+
+## 🧭 Data Braider
+
+[**Data Braider**](https://github.com/Spare-Brained-Community/SBI-DataBraider) is a free, community-maintained extension that turns Business Central data into configurable JSON API endpoints — no AL code required. When it's installed in your environment, navapi grows a dedicated **Data Braider** sidebar section so you can work with those endpoints as first-class objects:
+
+- **Endpoint browser** — every configured endpoint, labelled by type (Read Only / Per Record / Batch / Delta Read) and output format.
+- **Read** endpoint data in a grid using Data Braider's own filters (BC filter syntax) and paging — flat output as a table, hierarchical output as expandable nested tables. navapi transparently unwraps the double-encoded JSON payload, so you just see clean records.
+- **Write** to endpoints — Insert / Update / Delete / Upsert.
+- **Schema** — the exact `Table.Field` shape of each endpoint.
+- **New Endpoint** *(Data Braider 2.4+)* — author a complete endpoint from inside VS Code with searchable table and multi-select field pickers; you never hand-type a table or field number.
+
+Older Data Braider installs get discovery, read, write, and inferred schemas today; the authoring flow and live schemas light up automatically once Data Braider's config API (2.4+) is present — no navapi update needed.
+
+## 🤖 GitHub Copilot, built in
+
+The extension registers navapi's **Model Context Protocol** server with VS Code, so **Copilot agent mode gets navapi's tools out of the box** — no `mcp.json`, no separate install. Ask Copilot to "list the customers changed this week" or "read the CUSTOMERS Data Braider endpoint" and it calls the real APIs through navapi:
+
+- Every navapi tool is available: BC discovery, record CRUD, `$batch`, bound actions, and the full **Data Braider** tool set (read, write, schema, endpoint authoring).
+- The server is **scoped to your active profile** — click a different profile in the sidebar and Copilot follows, so it always talks to the environment you're looking at.
+- Secrets stay in your OS keychain; the same profiles power the CLI and the sidebar.
+
+Requires VS Code 1.101+ (for the MCP provider API).
+
 ## Development
 
 ```bash
 pnpm install && pnpm build
 # then in VS Code: open packages/vscode and press F5 (Run Extension)
-pnpm --filter navapi-vscode package   # builds the .vsix
+pnpm --filter navapi-vscode package             # host-only .vsix (local dev)
+pnpm --filter navapi-vscode package:universal   # universal .vsix (all platforms)
 ```
