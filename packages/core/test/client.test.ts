@@ -159,6 +159,14 @@ describe('findCompany', () => {
     expect(findCompany(companies, 'other co')?.name).toBe('Other');
     expect(findCompany(companies, 'nope')).toBeUndefined();
   });
+
+  it('companyLabel skips present-but-empty strings (real BC does this)', async () => {
+    const { companyLabel } = await import('../src/index.js');
+    expect(companyLabel({ id: 'g', name: 'CRONUS CH', displayName: '' })).toBe('CRONUS CH');
+    expect(companyLabel({ id: 'g', name: '', displayName: '  ' })).toBe('g');
+    expect(companyLabel({ displayName: 'Nice Name', name: 'X' })).toBe('Nice Name');
+    expect(companyLabel({})).toBe('(unnamed)');
+  });
 });
 
 describe('BcClient companies', () => {

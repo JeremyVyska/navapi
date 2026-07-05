@@ -9,6 +9,19 @@ interface Match {
   entitySet: EntitySetInfo;
 }
 
+/** Route enumeration via the runtime API is company-scoped; without a
+ * company only the standard route is discoverable — say so instead of
+ * silently returning a short list. */
+function warnIfNoCompany(company: string | undefined): void {
+  if (!company) {
+    console.error(
+      pc.yellow(
+        'No default company set — custom and Microsoft API routes cannot be enumerated. Run: navapi company use',
+      ),
+    );
+  }
+}
+
 function findMatches(cached: CachedRouteMetadata[], term?: string): Match[] {
   const needle = term?.toLowerCase();
   const matches: Match[] = [];
@@ -82,6 +95,7 @@ export function registerDiscover(program: Command): void {
     .action(async (term: string | undefined, opts, cmd) => {
       const globals = cmd.optsWithGlobals();
       const client = await createClient(globals.profile);
+      warnIfNoCompany(client.profile.company);
 
       let cached: CachedRouteMetadata[];
       const errors: { route: string; error: string }[] = [];
@@ -188,6 +202,7 @@ export function registerDiscover(program: Command): void {
     .action(async (opts, cmd) => {
       const globals = cmd.optsWithGlobals();
       const client = await createClient(globals.profile);
+      warnIfNoCompany(client.profile.company);
       const routes = await client.listRoutes();
       if (wantJson(opts.json)) {
         emitJson(routes);

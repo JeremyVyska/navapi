@@ -56,6 +56,18 @@ export interface ListResult {
 /** Entity sets addressed directly under the route rather than under a company. */
 const COMPANY_UNSCOPED = new Set(['companies', 'subscriptions']);
 
+/**
+ * Display label for a company: first non-empty of displayName/name/id.
+ * BC frequently returns present-but-empty strings, so `??` is not enough.
+ */
+export function companyLabel(company: Record<string, unknown>): string {
+  for (const key of ['displayName', 'name', 'id']) {
+    const value = company[key];
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return '(unnamed)';
+}
+
 /** Matches a company by GUID, name, or displayName (case-insensitive). */
 export function findCompany(companies: BcRecord[], target: string): BcRecord | undefined {
   const wanted = target.toLowerCase();

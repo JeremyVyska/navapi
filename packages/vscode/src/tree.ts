@@ -1,5 +1,6 @@
 import path from 'node:path';
 import {
+  companyLabel,
   createClientForProfile,
   defaultConfigDir,
   type EntitySetInfo,
@@ -161,7 +162,7 @@ export class CompaniesProvider extends BaseProvider<CompanyNode | HintNode> {
       kind: 'company',
       profileName,
       companyId: String(c.id ?? ''),
-      label: String(c.displayName ?? c.name ?? c.id ?? '(unnamed)'),
+      label: companyLabel(c),
       internalName: String(c.name ?? ''),
       isDefault: Boolean(current && c.id === current.id),
     }));

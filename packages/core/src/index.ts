@@ -10,6 +10,7 @@ export { defaultConfigDir, MetadataCache } from './cache.js';
 export {
   BcClient,
   type BcClientOptions,
+  companyLabel,
   DEFAULT_BASE_URL,
   findCompany,
   type ListOptions,

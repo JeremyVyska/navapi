@@ -4,6 +4,7 @@ import {
   type BatchRequest,
   type BcClient,
   type CachedRouteMetadata,
+  companyLabel,
   createClientForProfile,
   defaultConfigDir,
   findCompany,
@@ -145,7 +146,7 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         );
       }
       const stored = await store.get(profile);
-      const label = String(match.displayName ?? match.name ?? match.id);
+      const label = companyLabel(match);
       await store.upsert({ ...stored, company: label });
       // Cached clients hold the old profile snapshot; rebuild on next use.
       clients.clear();

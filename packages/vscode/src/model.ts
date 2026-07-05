@@ -2,7 +2,12 @@
  * Pure presentation logic for the tree view — no vscode imports, so it can
  * be unit-tested without an extension host.
  */
-import type { CachedRouteMetadata, EntitySetInfo, ProfileConfig } from '@navapi/core';
+import {
+  type CachedRouteMetadata,
+  companyLabel,
+  type EntitySetInfo,
+  type ProfileConfig,
+} from '@navapi/core';
 
 export interface ItemPresentation {
   label: string;
@@ -61,7 +66,7 @@ export function companyItem(
   company: { id?: unknown; name?: unknown; displayName?: unknown },
   isDefault: boolean,
 ): ItemPresentation {
-  const label = String(company.displayName ?? company.name ?? company.id ?? '(unnamed)');
+  const label = companyLabel(company as Record<string, unknown>);
   const internalName = String(company.name ?? '');
   return {
     label,

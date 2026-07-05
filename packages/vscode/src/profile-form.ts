@@ -2,6 +2,7 @@ import {
   BcClient,
   type BcRecord,
   ClientCredentialsAuth,
+  companyLabel,
   defaultConfigDir,
   type ProfileConfig,
   ProfileStore,
@@ -121,7 +122,7 @@ export class ProfileFormPanel {
         ok: true,
         message: `Connected — ${companies.length} ${companies.length === 1 ? 'company' : 'companies'} found.`,
         companies: companies.map((c) => ({
-          label: String(c.displayName ?? c.name ?? c.id),
+          label: companyLabel(c),
           name: String(c.name ?? ''),
         })),
       });

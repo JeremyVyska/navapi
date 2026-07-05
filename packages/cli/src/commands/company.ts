@@ -1,13 +1,9 @@
-import { type BcRecord, findCompany, NavApiError } from '@navapi/core';
+import { type BcRecord, companyLabel, findCompany, NavApiError } from '@navapi/core';
 import type { Command } from 'commander';
 import pc from 'picocolors';
 import { createClient, profileStore } from '../context.js';
 import { emitJson, printTable, wantJson } from '../output.js';
 import { ask } from '../prompt.js';
-
-function companyLabel(company: BcRecord): string {
-  return String(company.displayName ?? company.name ?? company.id);
-}
 
 async function pickInteractively(companies: BcRecord[]): Promise<BcRecord> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
