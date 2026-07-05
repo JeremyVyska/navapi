@@ -3,6 +3,13 @@
 All notable changes to the **navapi** extension are documented here. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.1.1
+
+- Marketplace listing now surfaces the native **Data Braider** support — added
+  a Data Braider section to the README, mentioned it in the description, and
+  added search keywords. No functional change from 0.1.0 (the Data Braider
+  features shipped in 0.1.0); this makes them discoverable on the listing.
+
 ## 0.1.0
 
 First public release.
