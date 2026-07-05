@@ -3,6 +3,11 @@
   "version": "0.0.0",
   "description": "The Business Central API CLI that doesn't make you cry. Discovery-first, agent-friendly, ETag-safe.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JeremyVyska/navapi.git",
+    "directory": "packages/cli"
+  },
   "type": "module",
   "bin": {
     "navapi": "./dist/index.js"

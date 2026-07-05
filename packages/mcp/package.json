@@ -3,6 +3,11 @@
   "version": "0.0.0",
   "description": "Model Context Protocol server for Microsoft Dynamics 365 Business Central — typed tools for discovery, CRUD, bound actions, and $batch.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JeremyVyska/navapi.git",
+    "directory": "packages/mcp"
+  },
   "type": "module",
   "main": "./dist/server.js",
   "types": "./dist/server.d.ts",

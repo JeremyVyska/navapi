@@ -4,6 +4,11 @@
   "description": "Browse Business Central environments, API routes, and entities. Tree views, one-click requests, schema browsing — for humans who like buttons.",
   "version": "0.0.5",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JeremyVyska/navapi.git",
+    "directory": "packages/vscode"
+  },
   "private": true,
   "publisher": "jeremy-vyska",
   "engines": {

@@ -1,5 +1,7 @@
 # navapi
 
+[![CI](https://github.com/JeremyVyska/navapi/actions/workflows/ci.yml/badge.svg)](https://github.com/JeremyVyska/navapi/actions/workflows/ci.yml)
+
 > The Business Central API toolkit that doesn't make you cry. 🧭
 
 **navapi** is a discovery-first toolkit for talking to Microsoft Dynamics 365 Business Central APIs — with four faces sharing one brain:
