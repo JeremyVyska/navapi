@@ -2,7 +2,7 @@
   "name": "navapi-vscode",
   "displayName": "navapi — Business Central APIs",
   "description": "Browse Business Central environments, API routes, and entities. Tree views, one-click requests, schema browsing — for humans who like buttons.",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "license": "MIT",
   "repository": {
     "type": "git",
