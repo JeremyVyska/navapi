@@ -1,4 +1,5 @@
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { defaultConfigDir } from './cache.js';
 import { NavApiError } from './errors.js';
@@ -7,6 +8,20 @@ import type { ProfileConfig } from './types.js';
 interface ProfilesFile {
   profiles: Record<string, ProfileConfig>;
   defaultProfile?: string;
+}
+
+/**
+ * Write through a temp file and rename, so an interrupted write can't leave a
+ * truncated config behind — `load()` treats unparsable JSON as "nothing
+ * configured", which the next write would then make permanent.
+ *
+ * The mode lands on the temp file at creation, so a secrets file is never
+ * briefly readable by others the way a write-then-chmod would leave it.
+ */
+async function writeFileAtomic(file: string, data: string, mode?: number): Promise<void> {
+  const tmp = `${file}.${process.pid}.tmp`;
+  await writeFile(tmp, data, mode === undefined ? 'utf8' : { encoding: 'utf8', mode });
+  await rename(tmp, file);
 }
 
 /** Named profiles stored in `<configDir>/profiles.json` (no secrets in here). */
@@ -30,8 +45,8 @@ export class ProfileStore {
   }
 
   private async save(data: ProfilesFile): Promise<void> {
-    await mkdir(this.dir, { recursive: true });
-    await writeFile(this.file, JSON.stringify(data, null, 2), 'utf8');
+    await mkdir(this.dir, { recursive: true, mode: 0o700 });
+    await writeFileAtomic(this.file, JSON.stringify(data, null, 2));
   }
 
   async upsert(profile: ProfileConfig, opts: { makeDefault?: boolean } = {}): Promise<void> {
@@ -138,7 +153,8 @@ export class KeychainSecretStore implements SecretStore {
     try {
       return this.factory(this.service, profileName).getPassword() ?? undefined;
     } catch {
-      // keyring throws on missing entries on some platforms
+      // Some platforms throw for a missing entry; Linux returns null instead,
+      // which is why a missing secret and an unreachable keyring look alike.
       return undefined;
     }
   }
@@ -204,6 +220,27 @@ export interface ResolvedSecretStore {
 }
 
 /**
+ * Whether the OS keychain is a durable place to leave the only copy of a
+ * secret.
+ *
+ * Everywhere except Linux, yes. On Linux `@napi-rs/keyring` silently falls
+ * back from the D-Bus Secret Service to the kernel keyring when no session bus
+ * is reachable — over SSH, in a container, from a systemd unit. Writes there
+ * succeed, so nothing throws, but the kernel keyring is cleared at reboot and
+ * expires on its own (`/proc/sys/kernel/keys/persistent_keyring_expiry`,
+ * three days by default). `LayeredSecretStore` would take that success as
+ * permission to delete the file copy, and the secret would be gone.
+ *
+ * So: no Secret Service means no keychain, and the file store stays in charge.
+ */
+export function secretServiceAvailable(): boolean {
+  if (process.platform !== 'linux') return true;
+  if (process.env.DBUS_SESSION_BUS_ADDRESS) return true;
+  const runtimeDir = process.env.XDG_RUNTIME_DIR;
+  return Boolean(runtimeDir) && existsSync(path.join(runtimeDir as string, 'bus'));
+}
+
+/**
  * The store every face should use. Prefers the OS keychain (layered over the
  * file store so existing secrets migrate); falls back to the plain file
  * store when no keychain is available or NAVAPI_SECRET_BACKEND=file.
@@ -216,8 +253,15 @@ export async function resolveSecretStore(
   if (process.env.NAVAPI_SECRET_BACKEND === 'file') {
     return { store: file, backend: 'file' };
   }
-  const factory =
-    opts.keyringFactory !== undefined ? opts.keyringFactory : await loadKeyringFactory();
+  let factory: KeyringFactory | null;
+  if (opts.keyringFactory !== undefined) {
+    // An injected factory is the caller's own store, so the probe below —
+    // which is about the native keyring's behaviour on Linux — doesn't apply.
+    factory = opts.keyringFactory;
+  } else {
+    factory = await loadKeyringFactory();
+    if (factory && !secretServiceAvailable()) factory = null;
+  }
   if (!factory) return { store: file, backend: 'file' };
   return {
     store: new LayeredSecretStore(new KeychainSecretStore(factory), file),
@@ -243,13 +287,8 @@ export class FileSecretStore implements SecretStore {
   }
 
   private async save(data: Record<string, string>): Promise<void> {
-    await mkdir(this.dir, { recursive: true });
-    await writeFile(this.file, JSON.stringify(data, null, 2), 'utf8');
-    try {
-      await chmod(this.file, 0o600);
-    } catch {
-      // best effort; not meaningful on Windows ACLs
-    }
+    await mkdir(this.dir, { recursive: true, mode: 0o700 });
+    await writeFileAtomic(this.file, JSON.stringify(data, null, 2), 0o600);
   }
 
   async get(profileName: string): Promise<string | undefined> {

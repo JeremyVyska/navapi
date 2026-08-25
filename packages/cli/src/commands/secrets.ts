@@ -1,4 +1,9 @@
-import { FileSecretStore, KeychainSecretStore, loadKeyringFactory } from '@navapi/core';
+import {
+  FileSecretStore,
+  KeychainSecretStore,
+  loadKeyringFactory,
+  secretServiceAvailable,
+} from '@navapi/core';
 import type { Command } from 'commander';
 import pc from 'picocolors';
 import { configDir, profileStore } from '../context.js';
@@ -14,7 +19,8 @@ async function locateSecrets(): Promise<{ keychainAvailable: boolean; rows: Secr
   const { profiles } = await profileStore().listAll();
   const file = new FileSecretStore(configDir());
   const factory = await loadKeyringFactory();
-  const keychain = factory ? new KeychainSecretStore(factory) : undefined;
+  const usable = factory && secretServiceAvailable();
+  const keychain = usable ? new KeychainSecretStore(factory) : undefined;
   const rows: SecretLocation[] = [];
   for (const p of profiles) {
     rows.push({
@@ -37,12 +43,19 @@ export function registerSecrets(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (opts) => {
       const { keychainAvailable, rows } = await locateSecrets();
-      const backend =
-        process.env.NAVAPI_SECRET_BACKEND === 'file'
-          ? 'file (forced via NAVAPI_SECRET_BACKEND)'
-          : keychainAvailable
-            ? 'keychain (file fallback)'
-            : 'file (no keychain available)';
+      // Say which of the reasons applies, so "file" doesn't look like a
+      // failure when it is the deliberate choice on a session with no
+      // Secret Service to store anything durably in.
+      let backend: string;
+      if (process.env.NAVAPI_SECRET_BACKEND === 'file') {
+        backend = 'file (forced via NAVAPI_SECRET_BACKEND)';
+      } else if (!secretServiceAvailable()) {
+        backend = 'file (no Secret Service on this session — the keychain would not persist here)';
+      } else if (keychainAvailable) {
+        backend = 'keychain (file fallback)';
+      } else {
+        backend = 'file (no keychain available)';
+      }
       if (wantJson(opts.json)) {
         emitJson({ backend, keychainAvailable, secrets: rows });
         return;

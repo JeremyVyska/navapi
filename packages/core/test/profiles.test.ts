@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -10,6 +10,7 @@ import {
   MetadataCache,
   ProfileStore,
   resolveSecretStore,
+  secretServiceAvailable,
 } from '../src/index.js';
 
 let tmpDir: string;
@@ -171,6 +172,60 @@ describe('resolveSecretStore', () => {
     } finally {
       delete process.env.NAVAPI_SECRET_BACKEND;
     }
+  });
+});
+
+const onLinux = process.platform === 'linux';
+const onPosix = process.platform !== 'win32';
+
+describe('secretServiceAvailable', () => {
+  let saved: Record<string, string | undefined>;
+  beforeEach(() => {
+    saved = {
+      dbus: process.env.DBUS_SESSION_BUS_ADDRESS,
+      runtime: process.env.XDG_RUNTIME_DIR,
+    };
+  });
+  afterEach(() => {
+    for (const [key, name] of [
+      ['dbus', 'DBUS_SESSION_BUS_ADDRESS'],
+      ['runtime', 'XDG_RUNTIME_DIR'],
+    ] as const) {
+      if (saved[key] === undefined) delete process.env[name];
+      else process.env[name] = saved[key] as string;
+    }
+  });
+
+  it.runIf(onLinux)('is false on Linux with no session bus to reach', () => {
+    delete process.env.DBUS_SESSION_BUS_ADDRESS;
+    process.env.XDG_RUNTIME_DIR = tmpDir; // exists, but has no `bus` socket
+    expect(secretServiceAvailable()).toBe(false);
+  });
+
+  it.runIf(onLinux)('is true on Linux when a session bus is advertised', () => {
+    process.env.DBUS_SESSION_BUS_ADDRESS = 'unix:path=/run/user/1000/bus';
+    expect(secretServiceAvailable()).toBe(true);
+  });
+
+  it.runIf(!onLinux)('is true off Linux, where the keychain is always durable', () => {
+    delete process.env.DBUS_SESSION_BUS_ADDRESS;
+    delete process.env.XDG_RUNTIME_DIR;
+    expect(secretServiceAvailable()).toBe(true);
+  });
+});
+
+describe('config file writes', () => {
+  it.runIf(onPosix)('creates the secrets file as 0600, never briefly wider', async () => {
+    await new FileSecretStore(tmpDir).set('contoso', 'hunter2');
+    const mode = (await stat(path.join(tmpDir, 'secrets.json'))).mode & 0o777;
+    expect(mode).toBe(0o600);
+  });
+
+  it('leaves no temp files behind', async () => {
+    await new ProfileStore(tmpDir).upsert(PROFILE);
+    await new FileSecretStore(tmpDir).set('contoso', 'hunter2');
+    const { readdir } = await import('node:fs/promises');
+    expect((await readdir(tmpDir)).filter((f) => f.endsWith('.tmp'))).toEqual([]);
   });
 });
 
