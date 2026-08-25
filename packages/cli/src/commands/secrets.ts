@@ -6,6 +6,8 @@ import { emitJson, printTable, wantJson } from '../output.js';
 
 interface SecretLocation {
   profile: string;
+  /** False for az-cli profiles, which authenticate without a stored secret. */
+  secretRequired: boolean;
   keychain: boolean;
   file: boolean;
 }
@@ -19,6 +21,7 @@ async function locateSecrets(): Promise<{ keychainAvailable: boolean; rows: Secr
   for (const p of profiles) {
     rows.push({
       profile: p.name,
+      secretRequired: p.authType !== 'azureCli',
       keychain: keychain ? (await keychain.get(p.name)) !== undefined : false,
       file: (await file.get(p.name)) !== undefined,
     });
@@ -51,10 +54,13 @@ export function registerSecrets(program: Command): void {
       printTable(
         rows.map((r) => ({
           profile: r.profile,
-          keychain: r.keychain ? '✔' : '',
+          auth: r.secretRequired ? 'app registration' : 'Azure CLI',
+          // An az-cli profile has nothing stored anywhere, which would
+          // otherwise read as a secret that has gone missing.
+          keychain: r.keychain ? '✔' : r.secretRequired ? '' : pc.dim('no secret required'),
           'plaintext file': r.file ? pc.yellow('⚠ yes') : '',
         })),
-        ['profile', 'keychain', 'plaintext file'],
+        ['profile', 'auth', 'keychain', 'plaintext file'],
       );
       if (rows.some((r) => r.file) && keychainAvailable) {
         console.log(pc.dim('Run "navapi secrets migrate" to move file secrets into the keychain.'));

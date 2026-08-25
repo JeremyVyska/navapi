@@ -108,6 +108,12 @@ export type AzExec = (file: string, args: string[]) => Promise<AzExecResult>;
 
 export interface AzureCliAuthOptions {
   tenantId: string;
+  /**
+   * Which az account to authenticate as, given as a username or an account
+   * id. Only needed when az holds more than one identity; by default az uses
+   * whichever account it is currently signed in as.
+   */
+  account?: string;
   /** OAuth resource. Defaults to the BC API resource. */
   resource?: string;
   /** Path to the az executable. Defaults to `az`, resolved via PATH. */
@@ -116,9 +122,19 @@ export interface AzureCliAuthOptions {
   exec?: AzExec;
 }
 
+/** One entry of `az account list --all`. */
+interface AzAccount {
+  id?: string;
+  tenantId?: string;
+  name?: string;
+  user?: { name?: string };
+}
+
 /** Tenant IDs are GUIDs or domain names — anything else is not ours to pass on. */
 const TENANT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const RESOURCE_PATTERN = /^https:\/\/[A-Za-z0-9][A-Za-z0-9._\-/]*$/;
+/** Account ids come back from az as GUIDs. */
+const ACCOUNT_ID_PATTERN = /^[A-Za-z0-9-]+$/;
 
 /** How long to trust a token whose expiry az reported in a form we can't parse. */
 const UNPARSABLE_EXPIRY_MS = 300_000;
@@ -142,14 +158,17 @@ const defaultExec: AzExec = async (file, args) =>
  */
 export class AzureCliAuth implements TokenProvider {
   private readonly tenantId: string;
+  private readonly account?: string;
   private readonly resource: string;
   private readonly azPath: string;
   private readonly exec: AzExec;
   private cached?: { token: string; expiresAt: number };
+  private accountId?: string;
   private inflight?: Promise<string>;
 
   constructor(options: AzureCliAuthOptions) {
     this.tenantId = options.tenantId;
+    this.account = options.account;
     this.resource = options.resource ?? DEFAULT_RESOURCE;
     this.azPath = options.azPath ?? 'az';
     this.exec = options.exec ?? defaultExec;
@@ -171,14 +190,73 @@ export class AzureCliAuth implements TokenProvider {
     return this.inflight;
   }
 
-  /** The command a user can copy-paste to reproduce what we run. */
+  /**
+   * The command that gets az into a state where we can ask it for a token.
+   * `--allow-no-subscriptions` matters: a customer tenant that only has BC
+   * usually has no Azure subscription at all, and az refuses to sign in
+   * without it.
+   */
   private get loginHint(): string {
-    return `az login --tenant ${this.tenantId} --scope ${this.resource}/.default`;
+    return `az login --tenant ${this.tenantId} --allow-no-subscriptions --scope ${this.resource}/.default`;
+  }
+
+  /**
+   * Which account az should authenticate as. az takes the identity from its
+   * active account, not from `--tenant`, so selecting a specific one means
+   * passing `--subscription` — which az refuses to combine with `--tenant`.
+   * The id always comes from az's own output, never from user input.
+   */
+  private async resolveAccountSelector(): Promise<string[]> {
+    if (!this.account) return ['--tenant', this.tenantId];
+    if (this.accountId) return ['--subscription', this.accountId];
+
+    let stdout: string;
+    try {
+      ({ stdout } = await this.exec(this.azPath, ['account', 'list', '--all', '-o', 'json']));
+    } catch (cause) {
+      throw this.describeFailure(cause);
+    }
+    let accounts: AzAccount[];
+    try {
+      accounts = JSON.parse(stdout);
+    } catch (cause) {
+      throw new AuthError('Could not parse the JSON output of az account list', { cause });
+    }
+
+    const wanted = this.account.toLowerCase();
+    const inTenant = accounts.filter(
+      (a) => (a.tenantId ?? '').toLowerCase() === this.tenantId.toLowerCase(),
+    );
+    const match = inTenant.find(
+      (a) => (a.id ?? '').toLowerCase() === wanted || (a.user?.name ?? '').toLowerCase() === wanted,
+    );
+    if (!match?.id) throw this.noSuchAccount(accounts);
+    if (!ACCOUNT_ID_PATTERN.test(match.id)) {
+      throw new AuthError(`az returned an unusable account id: ${match.id}`);
+    }
+    this.accountId = match.id;
+    return ['--subscription', match.id];
+  }
+
+  /** Says which accounts az does have, so the fix doesn't need guesswork. */
+  private noSuchAccount(accounts: AzAccount[]): AuthError {
+    const known = accounts
+      .map((a) => `${a.user?.name ?? '?'} (tenant ${a.tenantId ?? '?'})`)
+      .join(', ');
+    return new AuthError(
+      `az has no account for "${this.account}" in tenant ${this.tenantId}. ` +
+        (known ? `az is signed in as: ${known}. ` : 'az is not signed in to any account. ') +
+        `Sign that identity in for this tenant: ${this.loginHint}`,
+    );
   }
 
   private async requestToken(): Promise<string> {
+    const selector = await this.resolveAccountSelector();
     let stdout: string;
     try {
+      // --resource, not --scope: the v1-style form works on every az version
+      // we might meet, while --scope needs a recent one. Same token either way.
+      //
       // -o json, not -o tsv: tsv omits the expiry, which would cost a
       // subprocess per request instead of one per token lifetime.
       ({ stdout } = await this.exec(this.azPath, [
@@ -186,8 +264,7 @@ export class AzureCliAuth implements TokenProvider {
         'get-access-token',
         '--resource',
         this.resource,
-        '--tenant',
-        this.tenantId,
+        ...selector,
         '-o',
         'json',
       ]));
@@ -224,6 +301,15 @@ export class AzureCliAuth implements TokenProvider {
     if (/AADSTS700082|refresh token (?:has )?expired/i.test(stderr)) {
       return new AuthError(
         `The az refresh token for tenant ${this.tenantId} has expired. Run: ${this.loginHint}`,
+        { cause },
+      );
+    }
+    if (/AADSTS50020/.test(stderr)) {
+      // az picks the identity from its active account, not from --tenant, so
+      // this is what a second identity looks like rather than a missing one.
+      return new AuthError(
+        `The account az is currently signed in as does not exist in tenant ${this.tenantId}. ` +
+          `If another identity has access, sign it in for this tenant: ${this.loginHint}`,
         { cause },
       );
     }

@@ -68,7 +68,33 @@ navapi profile add contoso-dev \
   --auth azureCli
 ```
 
-The profile then works exactly like any other, in the CLI, the VS Code extension, and the MCP server. You are calling BC as yourself, so you get your own permissions — which is what you want for exploring an environment, and not what you want for an unattended integration. Client-credentials auth stays the default.
+The profile then works exactly like any other, in the CLI, the VS Code extension, and the MCP server. Client-credentials auth stays the default, and existing profiles are untouched.
+
+Reaching a customer's tenant works as long as one of the identities `az` holds has access to it — through delegated admin (GDAP), a guest invite, or an account in that tenant. If `az` holds more than one identity, say which one a profile should use, because `az` otherwise picks the one it is currently signed in as:
+
+```bash
+navapi profile add customer-x \
+  --tenant $CUSTOMER_TENANT \
+  --environment Production \
+  --auth azureCli \
+  --az-account me@example.com
+```
+
+If `az` has no account for that identity in that tenant yet, sign it in once:
+
+```bash
+az login --tenant $CUSTOMER_TENANT --allow-no-subscriptions --scope https://api.businesscentral.dynamics.com/.default
+```
+
+`--allow-no-subscriptions` matters — a tenant that only has Business Central usually has no Azure subscription, and `az login` fails without it.
+
+**This authenticates as you.** An az-cli token is a *delegated* token: Business Central sees a user, not an application. That means:
+
+- You need a BC license and a permission set in that environment. An app registration does not.
+- What you can read and write can differ from what the same environment's app-registration profile can, including row-level permissions.
+- Some tenants require admin consent for the Azure CLI's first-party app against the BC API before any of this works.
+
+So it is the right choice for exploring an environment as yourself, and the wrong one for an unattended integration — use client credentials there.
 
 Or from an agent, via MCP:
 

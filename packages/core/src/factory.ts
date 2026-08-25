@@ -43,7 +43,7 @@ async function createAuth(
   // Azure CLI auth has no secret to resolve — don't send it down the
   // client-credentials path, which would fail on the missing secret.
   if (profile.authType === 'azureCli') {
-    return new AzureCliAuth({ tenantId: profile.tenantId });
+    return new AzureCliAuth({ tenantId: profile.tenantId, account: profile.azAccount });
   }
   const secret =
     process.env.NAVAPI_CLIENT_SECRET ??

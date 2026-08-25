@@ -31,6 +31,10 @@ export function registerProfile(program: Command): void {
     .requiredOption('--environment <environment>', 'BC environment name (e.g. Production)')
     .option('--auth <type>', 'Auth strategy: clientCredentials (default) or azureCli')
     .option('--client-id <clientId>', 'App registration client ID (client-credentials auth)')
+    .option(
+      '--az-account <userOrId>',
+      'Which az identity to use, if az holds more than one (azureCli auth)',
+    )
     .option('--company <company>', 'Default company (name, displayName, or GUID)')
     .option('--secret <secret>', 'Client secret (omit to be prompted, or set NAVAPI_CLIENT_SECRET)')
     .option('--base-url <url>', 'Override the BC API host')
@@ -68,6 +72,7 @@ export function registerProfile(program: Command): void {
           tenantId: opts.tenant,
           authType,
           clientId: azureCli ? undefined : opts.clientId,
+          azAccount: azureCli ? opts.azAccount : undefined,
           environment: opts.environment,
           company: opts.company,
           baseUrl: opts.baseUrl,

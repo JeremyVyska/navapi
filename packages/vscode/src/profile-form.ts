@@ -19,6 +19,7 @@ export interface ProfileFormValues {
   authType: 'clientCredentials' | 'azureCli';
   clientId: string;
   clientSecret: string;
+  azAccount: string;
   environment: string;
   company: string;
   baseUrl: string;
@@ -50,11 +51,12 @@ async function testConnection(
       tenantId: values.tenantId,
       authType: values.authType,
       clientId: isAzureCli(values) ? undefined : values.clientId,
+      azAccount: isAzureCli(values) ? values.azAccount || undefined : undefined,
       environment: values.environment,
       baseUrl: values.baseUrl || undefined,
     },
     auth: isAzureCli(values)
-      ? new AzureCliAuth({ tenantId: values.tenantId })
+      ? new AzureCliAuth({ tenantId: values.tenantId, account: values.azAccount || undefined })
       : new ClientCredentialsAuth({
           tenantId: values.tenantId,
           clientId: values.clientId,
@@ -101,6 +103,7 @@ export class ProfileFormPanel {
         authType: existing?.authType ?? 'clientCredentials',
         clientId: existing?.clientId ?? '',
         clientSecret: '',
+        azAccount: existing?.azAccount ?? '',
         environment: existing?.environment ?? '',
         company: existing?.company ?? '',
         baseUrl: existing?.baseUrl ?? '',
@@ -165,6 +168,7 @@ export class ProfileFormPanel {
         tenantId: values.tenantId,
         authType: values.authType,
         clientId: isAzureCli(values) ? undefined : values.clientId,
+        azAccount: isAzureCli(values) ? values.azAccount || undefined : undefined,
         environment: values.environment,
         company: values.company || undefined,
         baseUrl: values.baseUrl || undefined,
@@ -241,6 +245,11 @@ function renderFormHtml(init: FormInit, nonce: string): string {
     <input id="clientSecret" type="password">
   </div>
 
+  <div id="azCliFields" class="hidden">
+    <label for="azAccount">az identity <span class="hint">— optional; only if <code>az</code> holds more than one account</span></label>
+    <input id="azAccount" placeholder="you@example.com">
+  </div>
+
   <div id="azCliNote" class="sub hidden">Uses the identity <code>az login</code> is signed in with — no app registration and no stored secret. You get your own Business Central permissions.</div>
 
   <label for="environment">Environment <span class="hint">— e.g. Production, Sandbox-UAT</span></label>
@@ -262,7 +271,7 @@ function renderFormHtml(init: FormInit, nonce: string): string {
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const init = ${embedJson(init)};
-    const FIELDS = ['name', 'tenantId', 'authType', 'clientId', 'clientSecret', 'environment', 'company', 'baseUrl'];
+    const FIELDS = ['name', 'tenantId', 'authType', 'clientId', 'clientSecret', 'azAccount', 'environment', 'company', 'baseUrl'];
     const el = (id) => document.getElementById(id);
     const azureCli = () => el('authType').value === 'azureCli';
     const required = () =>
@@ -279,6 +288,7 @@ function renderFormHtml(init: FormInit, nonce: string): string {
 
     function applyAuthType() {
       el('appRegFields').classList.toggle('hidden', azureCli());
+      el('azCliFields').classList.toggle('hidden', !azureCli());
       el('azCliNote').classList.toggle('hidden', !azureCli());
     }
     el('authType').addEventListener('change', () => { applyAuthType(); setStatus('', true); });

@@ -12,6 +12,11 @@ export interface ProfileConfig {
   authType?: 'clientCredentials' | 'azureCli';
   /** App registration client ID. Required for client-credentials auth only. */
   clientId?: string;
+  /**
+   * For `azureCli` auth: which az account to authenticate as, as a username
+   * or account id. Only needed when az holds more than one identity.
+   */
+  azAccount?: string;
   /** BC environment name, e.g. `Production` or `Sandbox-UAT`. */
   environment: string;
   /** Default company (display name, name, or GUID). Optional; can be passed per call. */

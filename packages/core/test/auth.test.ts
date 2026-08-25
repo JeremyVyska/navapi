@@ -174,7 +174,18 @@ describe('AzureCliAuth', () => {
     const auth = new AzureCliAuth({ tenantId: 'tenant-1', exec });
 
     await expect(auth.getToken()).rejects.toThrow(
-      /Not signed in to az\. Run: az login --tenant tenant-1 --scope https:\/\/api\.businesscentral\.dynamics\.com\/\.default/,
+      /Not signed in to az\. Run: az login --tenant tenant-1 --allow-no-subscriptions --scope https:\/\/api\.businesscentral\.dynamics\.com\/\.default/,
+    );
+  });
+
+  it('explains that az is signed in as a different identity', async () => {
+    const { exec } = mockAz([
+      azFails("AADSTS50020: User account '{EUII Hidden}' does not exist in tenant 'Contoso'."),
+    ]);
+    const auth = new AzureCliAuth({ tenantId: 'tenant-1', exec });
+
+    await expect(auth.getToken()).rejects.toThrow(
+      /does not exist in tenant tenant-1.*az login --tenant tenant-1 --allow-no-subscriptions/s,
     );
   });
 
@@ -199,5 +210,72 @@ describe('AzureCliAuth', () => {
     expect(
       () => new AzureCliAuth({ tenantId: 'tenant-1', resource: 'https://bc.example.com;whoami' }),
     ).toThrow(/Invalid resource/);
+  });
+});
+
+const azAccounts = (accounts: Array<{ id: string; tenantId: string; user: string }>) => ({
+  stdout: JSON.stringify(accounts.map((a) => ({ ...a, user: { name: a.user } }))),
+});
+
+const TWO_IDENTITIES = azAccounts([
+  { id: 'sub-abc', tenantId: 'tenant-1', user: 'me@abc.com' },
+  { id: 'sub-smc', tenantId: 'tenant-2', user: 'me@smc.com' },
+]);
+
+describe('AzureCliAuth account selection', () => {
+  it('passes --tenant when no account is pinned', async () => {
+    const { exec, calls } = mockAz([azJson('tok', 3600)]);
+    await new AzureCliAuth({ tenantId: 'tenant-1', exec }).getToken();
+
+    expect(calls[0].args).toContain('--tenant');
+    expect(calls[0].args).not.toContain('--subscription');
+  });
+
+  it('resolves a username to that account id and passes --subscription', async () => {
+    const { exec, calls } = mockAz([TWO_IDENTITIES, azJson('tok', 3600)]);
+    const auth = new AzureCliAuth({ tenantId: 'tenant-2', account: 'me@smc.com', exec });
+
+    expect(await auth.getToken()).toBe('tok');
+    expect(calls[0].args).toEqual(['account', 'list', '--all', '-o', 'json']);
+    // az rejects --tenant and --subscription together, so only one may appear.
+    expect(calls[1].args).toContain('--subscription');
+    expect(calls[1].args).toContain('sub-smc');
+    expect(calls[1].args).not.toContain('--tenant');
+  });
+
+  it('accepts an account id directly', async () => {
+    const { exec, calls } = mockAz([TWO_IDENTITIES, azJson('tok', 3600)]);
+    await new AzureCliAuth({ tenantId: 'tenant-1', account: 'sub-abc', exec }).getToken();
+
+    expect(calls[1].args).toContain('sub-abc');
+  });
+
+  it('looks the account up once and reuses it across refreshes', async () => {
+    const { exec, calls } = mockAz([
+      TWO_IDENTITIES,
+      azJson('tok-short', 60), // stale on arrival, forcing a second token request
+      azJson('tok-fresh', 3600),
+    ]);
+    const auth = new AzureCliAuth({ tenantId: 'tenant-1', account: 'me@abc.com', exec });
+
+    expect(await auth.getToken()).toBe('tok-short');
+    expect(await auth.getToken()).toBe('tok-fresh');
+    expect(calls.filter((c) => c.args[1] === 'list')).toHaveLength(1);
+  });
+
+  it('refuses an account that belongs to a different tenant', async () => {
+    const { exec } = mockAz([TWO_IDENTITIES]);
+    const auth = new AzureCliAuth({ tenantId: 'tenant-1', account: 'me@smc.com', exec });
+
+    // sub-smc is in tenant-2; using it would quietly return the wrong tenant's token.
+    await expect(auth.getToken()).rejects.toThrow(/no account for "me@smc.com" in tenant tenant-1/);
+  });
+
+  it('lists the accounts az does have when the pinned one is missing', async () => {
+    const { exec } = mockAz([TWO_IDENTITIES]);
+    const auth = new AzureCliAuth({ tenantId: 'tenant-1', account: 'nobody@example.com', exec });
+
+    await expect(auth.getToken()).rejects.toThrow(/me@abc\.com \(tenant tenant-1\)/);
+    await expect(auth.getToken()).rejects.toThrow(/az login --tenant tenant-1/);
   });
 });
