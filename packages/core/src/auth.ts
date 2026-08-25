@@ -158,16 +158,30 @@ const ACCOUNT_ID_PATTERN = /^[A-Za-z0-9-]+$/;
 const UNPARSABLE_EXPIRY_MS = 300_000;
 
 /**
- * `az` on Windows is a batch file, which Node refuses to spawn without a shell.
- * Arguments are therefore validated against the patterns above rather than
- * quoted — nothing that reaches the command line can carry shell syntax.
+ * `az` on Windows is `az.cmd`, a batch file, which Node refuses to spawn
+ * without a shell. Arguments are therefore validated against the patterns
+ * above rather than quoted — nothing that reaches the command line can carry
+ * shell syntax.
  */
 const NEEDS_SHELL = process.platform === 'win32';
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * The executable path is the one part a caller can set freely, and the usual
+ * Windows one is `C:\Program Files (x86)\...\az.cmd` — spaces, and parentheses
+ * that cmd treats as syntax. Under a shell it has to be quoted; without one,
+ * Node passes it to the OS untouched and quotes would become part of the name.
+ *
+ * Node warns (DEP0190) that arguments are concatenated rather than escaped
+ * under `shell: true`. That is why every argument reaching this point is
+ * validated against the patterns above: none of them can carry shell syntax.
+ */
 const defaultExec: AzExec = async (file, args) =>
-  await execFileAsync(file, args, { shell: NEEDS_SHELL, windowsHide: true });
+  await execFileAsync(NEEDS_SHELL ? `"${file}"` : file, args, {
+    shell: NEEDS_SHELL,
+    windowsHide: true,
+  });
 
 /**
  * Every identity `az` is currently signed in as, across all tenants — what a
