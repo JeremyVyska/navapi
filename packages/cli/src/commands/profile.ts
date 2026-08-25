@@ -1,10 +1,15 @@
 import path from 'node:path';
-import { MetadataCache, NavApiError } from '@navapi/core';
+import {
+  type AzureCliAccount,
+  listAzureCliAccounts,
+  MetadataCache,
+  NavApiError,
+} from '@navapi/core';
 import type { Command } from 'commander';
 import pc from 'picocolors';
 import { configDir, createClient, profileStore, secretStore } from '../context.js';
 import { emitJson, printTable, wantJson } from '../output.js';
-import { promptSecret } from '../prompt.js';
+import { ask, promptSecret } from '../prompt.js';
 
 type AuthType = 'clientCredentials' | 'azureCli';
 
@@ -16,6 +21,46 @@ export function parseAuthType(value: string): AuthType {
   throw new NavApiError(
     `Unknown --auth value "${value}". Use clientCredentials (default) or azureCli.`,
   );
+}
+
+/** One entry per (identity, tenant), nearest tenant first. */
+function rankAccounts(accounts: AzureCliAccount[], tenantId: string): AzureCliAccount[] {
+  const inTenant = (a: AzureCliAccount) => a.tenantId.toLowerCase() === tenantId.toLowerCase();
+  return [...new Map(accounts.map((a) => [`${a.user}|${a.tenantId}`, a])).values()].sort(
+    (a, b) => Number(inTenant(b)) - Number(inTenant(a)) || a.user.localeCompare(b.user),
+  );
+}
+
+/**
+ * Offers the az identities to choose from, since nobody remembers which
+ * accounts they have connected. Only asks when the answer isn't obvious:
+ * one identity needs no question, and az being absent isn't a reason to
+ * fail `profile add`.
+ */
+async function pickAzAccount(tenantId: string): Promise<string | undefined> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return undefined;
+  let accounts: AzureCliAccount[];
+  try {
+    accounts = rankAccounts(await listAzureCliAccounts(), tenantId);
+  } catch {
+    return undefined;
+  }
+  if (accounts.length < 2) return undefined;
+
+  console.log(pc.dim('az is signed in as more than one identity:'));
+  console.log(`${pc.bold(' 0')}) ${pc.dim('whichever account az is signed in as (default)')}`);
+  accounts.forEach((a, i) => {
+    const where =
+      a.tenantId.toLowerCase() === tenantId.toLowerCase()
+        ? '— this tenant'
+        : `— tenant ${a.tenantId}`;
+    console.log(`${pc.bold(String(i + 1).padStart(2))}) ${a.user} ${pc.dim(where)}`);
+  });
+  const answer = await ask(`Select identity [0-${accounts.length}]: `);
+  if (!answer || answer === '0') return undefined;
+  const picked = accounts[Number.parseInt(answer, 10) - 1];
+  if (!picked) throw new NavApiError(`No identity at position "${answer}".`);
+  return picked.user;
 }
 
 export function registerProfile(program: Command): void {
@@ -52,6 +97,9 @@ export function registerProfile(program: Command): void {
         );
       }
 
+      const azAccount =
+        azureCli && !opts.azAccount ? await pickAzAccount(opts.tenant) : opts.azAccount;
+
       let secret: string | undefined;
       if (!azureCli) {
         secret = opts.secret ?? process.env.NAVAPI_CLIENT_SECRET ?? undefined;
@@ -72,7 +120,7 @@ export function registerProfile(program: Command): void {
           tenantId: opts.tenant,
           authType,
           clientId: azureCli ? undefined : opts.clientId,
-          azAccount: azureCli ? opts.azAccount : undefined,
+          azAccount: azureCli ? azAccount : undefined,
           environment: opts.environment,
           company: opts.company,
           baseUrl: opts.baseUrl,
@@ -85,7 +133,9 @@ export function registerProfile(program: Command): void {
         await store.set(name, secret);
         how = `secret in ${backend}`;
       } else {
-        how = 'auth: Azure CLI — no secret stored';
+        how = azAccount
+          ? `auth: Azure CLI as ${azAccount} — no secret stored`
+          : 'auth: Azure CLI — no secret stored';
       }
       console.log(
         `${pc.green('✔')} Profile ${pc.bold(name)} saved ` +
@@ -148,6 +198,38 @@ export function registerProfile(program: Command): void {
         }
         throw new NavApiError(`Connection test failed for "${client.profile.name}": ${message}`);
       }
+    });
+
+  profile
+    .command('az-accounts')
+    .description('List the identities az is signed in as, for --az-account')
+    .option('--json', 'JSON output')
+    .action(async (opts, cmd) => {
+      const globals = cmd.optsWithGlobals();
+      const accounts = await listAzureCliAccounts();
+      if (wantJson(opts.json)) {
+        emitJson(accounts);
+        return;
+      }
+      if (!accounts.length) {
+        console.log(pc.dim('az is not signed in to any account. Run: az login'));
+        return;
+      }
+      // Rank against the named profile's tenant when there is one to compare to.
+      let tenantId = '';
+      try {
+        tenantId = (await profileStore().get(globals.profile)).tenantId;
+      } catch {
+        // no profile yet, or none named — plain alphabetical is fine
+      }
+      printTable(
+        rankAccounts(accounts, tenantId).map((a) => ({
+          identity: a.user,
+          tenant: a.tenantId,
+          '': a.tenantId.toLowerCase() === tenantId.toLowerCase() ? '● this tenant' : '',
+        })),
+        ['identity', 'tenant', ''],
+      );
     });
 
   profile

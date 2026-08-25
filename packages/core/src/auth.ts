@@ -122,12 +122,30 @@ export interface AzureCliAuthOptions {
   exec?: AzExec;
 }
 
-/** One entry of `az account list --all`. */
-interface AzAccount {
+/** One entry of `az account list --all`, as az writes it. */
+interface RawAzAccount {
   id?: string;
   tenantId?: string;
   name?: string;
   user?: { name?: string };
+}
+
+/** An identity `az` is signed in as, in one tenant. */
+export interface AzureCliAccount {
+  /** Account id: a subscription id, or the tenant id for tenant-level accounts. */
+  id: string;
+  tenantId: string;
+  /** Signed-in username, e.g. `you@example.com`. */
+  user: string;
+  /** The subscription name az shows, e.g. `Azure subscription 1`. */
+  name?: string;
+}
+
+export interface AzureCliListOptions {
+  /** Path to the az executable. Defaults to `az`, resolved via PATH. */
+  azPath?: string;
+  /** Override the process runner; for tests. */
+  exec?: AzExec;
 }
 
 /** Tenant IDs are GUIDs or domain names — anything else is not ours to pass on. */
@@ -150,6 +168,72 @@ const execFileAsync = promisify(execFile);
 
 const defaultExec: AzExec = async (file, args) =>
   await execFileAsync(file, args, { shell: NEEDS_SHELL, windowsHide: true });
+
+/**
+ * Every identity `az` is currently signed in as, across all tenants — what a
+ * profile's `azAccount` can be set to. Lets a UI offer a list instead of
+ * asking the user to remember which accounts they have connected.
+ */
+export async function listAzureCliAccounts(
+  options: AzureCliListOptions = {},
+): Promise<AzureCliAccount[]> {
+  const exec = options.exec ?? defaultExec;
+  const azPath = options.azPath ?? 'az';
+  let stdout: string;
+  try {
+    ({ stdout } = await exec(azPath, ['account', 'list', '--all', '-o', 'json']));
+  } catch (cause) {
+    throw describeAzFailure(cause, 'az login');
+  }
+  let raw: RawAzAccount[];
+  try {
+    raw = JSON.parse(stdout);
+  } catch (cause) {
+    throw new AuthError('Could not parse the JSON output of az account list', { cause });
+  }
+  return raw
+    .filter((a): a is RawAzAccount & { id: string } => Boolean(a.id && a.tenantId && a.user?.name))
+    .map((a) => ({
+      id: a.id,
+      tenantId: a.tenantId as string,
+      user: a.user?.name as string,
+      name: a.name,
+    }));
+}
+
+/** Turns az's exit codes and stderr into something the user can act on. */
+function describeAzFailure(cause: unknown, loginHint: string, tenantId?: string): AuthError {
+  const err = cause as { code?: string | number; stderr?: string };
+  const stderr = typeof err?.stderr === 'string' ? err.stderr.trim() : '';
+  if (err?.code === 'ENOENT' || /not (?:found|recognized)/i.test(stderr)) {
+    return new AuthError(
+      'az CLI not found on PATH. Install the Azure CLI, or use client-credentials auth ' +
+        '(navapi profile add <name> --client-id <id> ...).',
+      { cause },
+    );
+  }
+  if (/AADSTS700082|refresh token (?:has )?expired/i.test(stderr)) {
+    return new AuthError(
+      `The az refresh token${tenantId ? ` for tenant ${tenantId}` : ''} has expired. ` +
+        `Run: ${loginHint}`,
+      { cause },
+    );
+  }
+  if (/AADSTS50020/.test(stderr)) {
+    // az picks the identity from its active account, not from --tenant, so
+    // this is what a second identity looks like rather than a missing one.
+    return new AuthError(
+      `The account az is currently signed in as does not exist in tenant ${tenantId ?? '?'}. ` +
+        `If another identity has access, sign it in for this tenant: ${loginHint}`,
+      { cause },
+    );
+  }
+  if (/az login/i.test(stderr)) {
+    return new AuthError(`Not signed in to az. Run: ${loginHint}`, { cause });
+  }
+  const detail = stderr || (cause instanceof Error ? cause.message : String(cause));
+  return new AuthError(`az failed: ${detail}`, { cause });
+}
 
 /**
  * Delegated auth using the identity the az CLI is already signed in with, via
@@ -210,27 +294,14 @@ export class AzureCliAuth implements TokenProvider {
     if (!this.account) return ['--tenant', this.tenantId];
     if (this.accountId) return ['--subscription', this.accountId];
 
-    let stdout: string;
-    try {
-      ({ stdout } = await this.exec(this.azPath, ['account', 'list', '--all', '-o', 'json']));
-    } catch (cause) {
-      throw this.describeFailure(cause);
-    }
-    let accounts: AzAccount[];
-    try {
-      accounts = JSON.parse(stdout);
-    } catch (cause) {
-      throw new AuthError('Could not parse the JSON output of az account list', { cause });
-    }
-
+    const accounts = await listAzureCliAccounts({ azPath: this.azPath, exec: this.exec });
     const wanted = this.account.toLowerCase();
-    const inTenant = accounts.filter(
-      (a) => (a.tenantId ?? '').toLowerCase() === this.tenantId.toLowerCase(),
+    const match = accounts.find(
+      (a) =>
+        a.tenantId.toLowerCase() === this.tenantId.toLowerCase() &&
+        (a.id.toLowerCase() === wanted || a.user.toLowerCase() === wanted),
     );
-    const match = inTenant.find(
-      (a) => (a.id ?? '').toLowerCase() === wanted || (a.user?.name ?? '').toLowerCase() === wanted,
-    );
-    if (!match?.id) throw this.noSuchAccount(accounts);
+    if (!match) throw this.noSuchAccount(accounts);
     if (!ACCOUNT_ID_PATTERN.test(match.id)) {
       throw new AuthError(`az returned an unusable account id: ${match.id}`);
     }
@@ -239,10 +310,8 @@ export class AzureCliAuth implements TokenProvider {
   }
 
   /** Says which accounts az does have, so the fix doesn't need guesswork. */
-  private noSuchAccount(accounts: AzAccount[]): AuthError {
-    const known = accounts
-      .map((a) => `${a.user?.name ?? '?'} (tenant ${a.tenantId ?? '?'})`)
-      .join(', ');
+  private noSuchAccount(accounts: AzureCliAccount[]): AuthError {
+    const known = accounts.map((a) => `${a.user} (tenant ${a.tenantId})`).join(', ');
     return new AuthError(
       `az has no account for "${this.account}" in tenant ${this.tenantId}. ` +
         (known ? `az is signed in as: ${known}. ` : 'az is not signed in to any account. ') +
@@ -287,37 +356,8 @@ export class AzureCliAuth implements TokenProvider {
     return json.accessToken;
   }
 
-  /** Turns az's exit codes and stderr into something the user can act on. */
   private describeFailure(cause: unknown): AuthError {
-    const err = cause as { code?: string | number; stderr?: string };
-    const stderr = typeof err?.stderr === 'string' ? err.stderr.trim() : '';
-    if (err?.code === 'ENOENT' || /not (?:found|recognized)/i.test(stderr)) {
-      return new AuthError(
-        'az CLI not found on PATH. Install the Azure CLI, or use client-credentials auth ' +
-          '(navapi profile add <name> --client-id <id> ...).',
-        { cause },
-      );
-    }
-    if (/AADSTS700082|refresh token (?:has )?expired/i.test(stderr)) {
-      return new AuthError(
-        `The az refresh token for tenant ${this.tenantId} has expired. Run: ${this.loginHint}`,
-        { cause },
-      );
-    }
-    if (/AADSTS50020/.test(stderr)) {
-      // az picks the identity from its active account, not from --tenant, so
-      // this is what a second identity looks like rather than a missing one.
-      return new AuthError(
-        `The account az is currently signed in as does not exist in tenant ${this.tenantId}. ` +
-          `If another identity has access, sign it in for this tenant: ${this.loginHint}`,
-        { cause },
-      );
-    }
-    if (/az login/i.test(stderr)) {
-      return new AuthError(`Not signed in to az. Run: ${this.loginHint}`, { cause });
-    }
-    const detail = stderr || (cause instanceof Error ? cause.message : String(cause));
-    return new AuthError(`az account get-access-token failed: ${detail}`, { cause });
+    return describeAzFailure(cause, this.loginHint, this.tenantId);
   }
 }
 

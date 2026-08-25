@@ -5,6 +5,7 @@ import {
   ClientCredentialsAuth,
   companyLabel,
   defaultConfigDir,
+  listAzureCliAccounts,
   type ProfileConfig,
   ProfileStore,
   resolveSecretStore,
@@ -111,6 +112,7 @@ export class ProfileFormPanel {
     };
     this.panel.webview.html = renderFormHtml(init, getNonce());
     this.panel.webview.onDidReceiveMessage((msg: { type?: string; values?: ProfileFormValues }) => {
+      if (msg?.type === 'azAccounts') void this.handleAzAccounts();
       if (msg?.type === 'test' && msg.values) void this.handleTest(msg.values);
       if (msg?.type === 'save' && msg.values) void this.handleSave(msg.values);
     });
@@ -125,6 +127,20 @@ export class ProfileFormPanel {
       return store.get(this.originalName);
     }
     return undefined;
+  }
+
+  /** Feeds the identity picker, so nobody has to remember their az accounts. */
+  private async handleAzAccounts(): Promise<void> {
+    try {
+      const accounts = await listAzureCliAccounts();
+      await this.panel.webview.postMessage({ type: 'azAccountsResult', ok: true, accounts });
+    } catch (err) {
+      await this.panel.webview.postMessage({
+        type: 'azAccountsResult',
+        ok: false,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   private async handleTest(values: ProfileFormValues): Promise<void> {
@@ -209,6 +225,9 @@ function renderFormHtml(init: FormInit, nonce: string): string {
   input:focus, select:focus { outline: 1px solid var(--vscode-focusBorder); }
   input[readonly] { opacity: .6; }
   .hidden { display: none; }
+  .inline { display: flex; gap: 8px; align-items: center; }
+  button.link { background: none; color: var(--vscode-textLink-foreground); padding: 4px 2px; white-space: nowrap; }
+  #azAccountStatus { color: var(--vscode-descriptionForeground); font-size: 12px; margin-top: 4px; min-height: 16px; }
   .row { display: flex; gap: 10px; margin-top: 22px; align-items: center; }
   button { border: none; padding: 6px 14px; border-radius: 2px; cursor: pointer; font-size: 13px; }
   #save { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
@@ -246,8 +265,12 @@ function renderFormHtml(init: FormInit, nonce: string): string {
   </div>
 
   <div id="azCliFields" class="hidden">
-    <label for="azAccount">az identity <span class="hint">— optional; only if <code>az</code> holds more than one account</span></label>
-    <input id="azAccount" placeholder="you@example.com">
+    <label for="azAccount">az identity <span class="hint">— which signed-in account to use</span></label>
+    <div class="inline">
+      <select id="azAccount"></select>
+      <button id="azReload" class="link" type="button">Reload</button>
+    </div>
+    <div id="azAccountStatus" class="hint"></div>
   </div>
 
   <div id="azCliNote" class="sub hidden">Uses the identity <code>az login</code> is signed in with — no app registration and no stored secret. You get your own Business Central permissions.</div>
@@ -286,10 +309,50 @@ function renderFormHtml(init: FormInit, nonce: string): string {
       if (init.hasStoredSecret) el('clientSecret').placeholder = '(unchanged — leave blank to keep)';
     }
 
+    let azAccounts = null;
+
+    function requestAzAccounts() {
+      el('azAccountStatus').textContent = 'Reading az accounts\u2026';
+      vscode.postMessage({ type: 'azAccounts' });
+    }
+
+    function renderAzAccounts() {
+      const sel = el('azAccount');
+      const current = sel.value || init.values.azAccount || '';
+      const tenant = el('tenantId').value.trim().toLowerCase();
+      const add = (value, label) => {
+        const o = document.createElement('option');
+        o.value = value;
+        o.textContent = label;
+        sel.appendChild(o);
+      };
+      sel.replaceChildren();
+      add('', 'Whichever account az is signed in as');
+      const seen = new Set();
+      const inTenant = (a) => a.tenantId.toLowerCase() === tenant;
+      for (const a of (azAccounts || []).slice().sort((a, b) =>
+        (inTenant(a) ? 0 : 1) - (inTenant(b) ? 0 : 1) || a.user.localeCompare(b.user)
+      )) {
+        const key = a.user + '|' + a.tenantId;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        add(a.user, a.user + (inTenant(a) ? ' \u2014 this tenant' : ' \u2014 tenant ' + a.tenantId));
+      }
+      // Keep a saved identity selectable even if az no longer reports it.
+      if (current && !Array.from(sel.options).some((o) => o.value === current)) {
+        add(current, current + ' (saved)');
+      }
+      sel.value = current;
+    }
+
+    el('azReload').addEventListener('click', requestAzAccounts);
+    el('tenantId').addEventListener('input', renderAzAccounts);
+
     function applyAuthType() {
       el('appRegFields').classList.toggle('hidden', azureCli());
       el('azCliFields').classList.toggle('hidden', !azureCli());
       el('azCliNote').classList.toggle('hidden', !azureCli());
+      if (azureCli() && azAccounts === null) requestAzAccounts();
     }
     el('authType').addEventListener('change', () => { applyAuthType(); setStatus('', true); });
     applyAuthType();
@@ -364,6 +427,13 @@ function renderFormHtml(init: FormInit, nonce: string): string {
             el('company').value = msg.companies[0].label;
           }
         }
+      }
+      if (msg.type === 'azAccountsResult') {
+        azAccounts = msg.ok ? msg.accounts : [];
+        el('azAccountStatus').textContent = msg.ok
+          ? (msg.accounts.length ? '' : 'az is not signed in to any account.')
+          : msg.message;
+        renderAzAccounts();
       }
       if (msg.type === 'saveResult' && !msg.ok) {
         el('save').disabled = false;

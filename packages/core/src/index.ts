@@ -1,12 +1,15 @@
 export {
   type AzExec,
   type AzExecResult,
+  type AzureCliAccount,
   AzureCliAuth,
   type AzureCliAuthOptions,
+  type AzureCliListOptions,
   ClientCredentialsAuth,
   type ClientCredentialsOptions,
   DEFAULT_RESOURCE,
   DEFAULT_SCOPE,
+  listAzureCliAccounts,
   StaticTokenProvider,
   type TokenProvider,
 } from './auth.js';

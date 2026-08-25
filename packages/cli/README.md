@@ -9,6 +9,7 @@ navapi profile add contoso-prod --tenant $TENANT_ID --client-id $CLIENT_ID \
 
 # Or, if you're already signed in with `az login`: no app registration, no secret
 navapi profile add contoso-dev --tenant $TENANT_ID --environment Sandbox-UAT --auth azureCli
+navapi profile az-accounts         # which identities az is signed in as (--az-account picks one)
 
 navapi company list                # companies in the environment (● = current default)
 navapi company use                 # switch the default company (interactive picker on a TTY)
