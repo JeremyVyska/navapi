@@ -1,4 +1,4 @@
-import { formatKey, NavApiError, type ODataQuery } from '@navapi/core';
+import { formatKey, NavApiError, type ODataQuery, type RecordKey } from '@navapi/core';
 import type { Command } from 'commander';
 import pc from 'picocolors';
 import { createClient } from '../context.js';
@@ -17,6 +17,21 @@ function csv(value?: string): string[] | undefined {
         .map((s) => s.trim())
         .filter(Boolean)
     : undefined;
+}
+
+async function resolveRecordKey(id?: string, keySource?: string): Promise<RecordKey | undefined> {
+  if (id && keySource) throw new NavApiError('Pass either a positional id or --key, not both.');
+  if (!keySource) return id;
+  const key = await readBody(keySource);
+  if (typeof key !== 'object' || key === null || Array.isArray(key)) {
+    throw new NavApiError('--key must be a JSON object of OData key fields.');
+  }
+  for (const [name, value] of Object.entries(key)) {
+    if (!name || !['string', 'number', 'boolean'].includes(typeof value)) {
+      throw new NavApiError('--key values must be strings, numbers, or booleans.');
+    }
+  }
+  return key as Record<string, string | number | boolean>;
 }
 
 /** `--set key=value` pairs → object; values parse as JSON when possible. */
@@ -50,25 +65,27 @@ export function registerCrud(program: Command): void {
     .option('--skip <n>', '$skip offset', Number)
     .option('--all', 'Follow pagination to the end')
     .option('--nav <navProperty>', 'Fetch a navigation property of the record (requires an id)')
+    .option('--key <json|file|->', 'Named OData key object; supports composite keys')
     .option('--count', 'Request $count and report the total matching records')
     .option('--show-url', 'Print the request URL to stderr (copy/paste-able)')
-    .option('--route <route>', 'API route (default v2.0)')
+    .option('--route <route>', 'Endpoint route (default v2.0; navapi ODataV4 is read-only)')
     .option('--company <company>', 'Company override for this call')
     .option('--json', 'JSON output')
     .action(async (entitySet: string, id: string | undefined, opts, cmd) => {
       const globals = cmd.optsWithGlobals();
       const client = await createClient(globals.profile);
       const scope = { route: opts.route, company: opts.company };
+      const key = await resolveRecordKey(id, opts.key);
 
-      if (opts.nav && !id) throw new NavApiError('--nav requires a record id.');
+      if (opts.nav && !key) throw new NavApiError('--nav requires a record id or --key.');
 
-      if (id) {
+      if (key) {
         if (opts.showUrl) {
           const base = await client.buildListUrl(entitySet, scope);
-          console.error(pc.dim(`${base}(${formatKey(id)})${opts.nav ? `/${opts.nav}` : ''}`));
+          console.error(pc.dim(`${base}(${formatKey(key)})${opts.nav ? `/${opts.nav}` : ''}`));
         }
         if (opts.nav) {
-          const nav = await client.getNavigation(entitySet, id, opts.nav, scope);
+          const nav = await client.getNavigation(entitySet, key, opts.nav, scope);
           if (nav.kind === 'record') {
             const record = nav.items[0];
             if (!record) console.error(pc.dim('(empty)'));
@@ -80,7 +97,7 @@ export function registerCrud(program: Command): void {
           else printTable(nav.items);
           return;
         }
-        const record = await client.getRecord(entitySet, id, scope);
+        const record = await client.getRecord(entitySet, key, scope);
         if (wantJson(opts.json)) emitJson(record);
         else printRecord(record);
         return;
@@ -122,7 +139,7 @@ export function registerCrud(program: Command): void {
     .command('post <entitySet>')
     .description('Create a record')
     .requiredOption('--body <json|file|->', 'Inline JSON, a file path, or - for stdin')
-    .option('--route <route>', 'API route (default v2.0)')
+    .option('--route <route>', 'Endpoint route (default v2.0)')
     .option('--company <company>', 'Company override for this call')
     .option('--json', 'JSON output')
     .action(async (entitySet: string, opts, cmd) => {
@@ -141,16 +158,19 @@ export function registerCrud(program: Command): void {
     });
 
   program
-    .command('patch <entitySet> <id>')
+    .command('patch <entitySet> [id]')
     .description('Update a record (ETags handled automatically)')
     .option('--set <key=value>', 'Field to set; repeatable', collect, [])
     .option('--body <json|file|->', 'Inline JSON, a file path, or - for stdin')
-    .option('--route <route>', 'API route (default v2.0)')
+    .option('--key <json|file|->', 'Named OData key object; supports composite keys')
+    .option('--route <route>', 'Endpoint route (default v2.0)')
     .option('--company <company>', 'Company override for this call')
     .option('--json', 'JSON output')
-    .action(async (entitySet: string, id: string, opts, cmd) => {
+    .action(async (entitySet: string, id: string | undefined, opts, cmd) => {
       const globals = cmd.optsWithGlobals();
       const client = await createClient(globals.profile);
+      const key = await resolveRecordKey(id, opts.key);
+      if (!key) throw new NavApiError('Patch requires a positional id or --key.');
       const fromBody = opts.body ? await readBody(opts.body) : {};
       if (typeof fromBody !== 'object' || fromBody === null || Array.isArray(fromBody)) {
         throw new NavApiError('--body must be a JSON object for patch');
@@ -159,7 +179,7 @@ export function registerCrud(program: Command): void {
       if (!Object.keys(patch).length) {
         throw new NavApiError('Nothing to update. Use --set key=value or --body.');
       }
-      const updated = await client.update(entitySet, id, patch, {
+      const updated = await client.update(entitySet, key, patch, {
         route: opts.route,
         company: opts.company,
       });
@@ -171,23 +191,27 @@ export function registerCrud(program: Command): void {
     });
 
   program
-    .command('delete <entitySet> <id>')
+    .command('delete <entitySet> [id]')
     .description('Delete a record (ETags handled automatically)')
     .option('--yes', 'Skip confirmation')
-    .option('--route <route>', 'API route (default v2.0)')
+    .option('--key <json|file|->', 'Named OData key object; supports composite keys')
+    .option('--route <route>', 'Endpoint route (default v2.0)')
     .option('--company <company>', 'Company override for this call')
-    .action(async (entitySet: string, id: string, opts, cmd) => {
+    .action(async (entitySet: string, id: string | undefined, opts, cmd) => {
       const globals = cmd.optsWithGlobals();
+      const key = await resolveRecordKey(id, opts.key);
+      if (!key) throw new NavApiError('Delete requires a positional id or --key.');
+      const keyLabel = typeof key === 'string' ? key : JSON.stringify(key);
       if (!opts.yes && process.stdin.isTTY && process.stdout.isTTY) {
-        const ok = await confirm(`Delete ${entitySet}(${id})?`);
+        const ok = await confirm(`Delete ${entitySet}(${keyLabel})?`);
         if (!ok) {
           console.log(pc.dim('Aborted.'));
           return;
         }
       }
       const client = await createClient(globals.profile);
-      await client.deleteRecord(entitySet, id, { route: opts.route, company: opts.company });
-      console.log(pc.green(`✔ deleted ${entitySet}(${id})`));
+      await client.deleteRecord(entitySet, key, { route: opts.route, company: opts.company });
+      console.log(pc.green(`✔ deleted ${entitySet}(${keyLabel})`));
     });
 
   program

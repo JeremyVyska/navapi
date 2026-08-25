@@ -13,7 +13,7 @@ export function registerAction(program: Command): void {
         'Bare names are qualified with the schema namespace (Microsoft.NAV by default).',
     )
     .option('--body <json|file|->', 'Action parameters as JSON')
-    .option('--route <route>', 'API route (default v2.0)')
+    .option('--route <route>', 'API route (default v2.0; navapi ODataV4 is read-only)')
     .option('--company <company>', 'Company override for this call')
     .option('--json', 'JSON output')
     .action(async (entitySet: string, id: string, actionName: string, opts, cmd) => {
@@ -40,7 +40,7 @@ export function registerAction(program: Command): void {
         'request URLs are relative to the route root and may use {company}.',
     )
     .requiredOption('--body <json|file|->', 'Batch requests as JSON')
-    .option('--route <route>', 'API route (default v2.0)')
+    .option('--route <route>', 'API route (default v2.0; navapi ODataV4 is read-only)')
     .option('--company <company>', 'Company used for {company} substitution')
     .option('--json', 'JSON output')
     .action(async (opts, cmd) => {

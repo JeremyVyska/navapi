@@ -20,6 +20,10 @@ navapi get customers --count --show-url            # "x of Y" totals + the reque
 navapi get salesOrders <id> --nav salesOrderLines  # navigation properties (FastTabs for the terminal)
 navapi get salesOrders --filter "status eq 'Open'" --json | jq '.[].number'
 navapi patch customers <id> --set blocked=All     # ETags handled for you
+navapi post Customer --route ODataV4 --body customer.json
+navapi patch SalesLine --route ODataV4 \
+  --key '{"Document_Type":"Order","Document_No":"SO-1","Line_No":10000}' \
+  --set Quantity=2
 navapi delete salesOrders <id> --yes
 ```
 

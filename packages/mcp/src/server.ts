@@ -36,12 +36,16 @@ const scopeArgs = {
   route: z
     .string()
     .optional()
-    .describe('API route path, e.g. "v2.0" (default) or "publisher/group/v1.0"'),
+    .describe(
+      'Endpoint route, e.g. "v2.0" (default), "publisher/group/v1.0", or read-only "ODataV4"',
+    ),
   company: z
     .string()
     .optional()
     .describe('Company name, displayName, or GUID; omit to use the profile default'),
 };
+
+const recordKey = z.union([z.string(), z.record(z.union([z.string(), z.number(), z.boolean()]))]);
 
 function jsonResult(data: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
@@ -164,7 +168,7 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
     'list_routes',
     {
       description:
-        'List every API route the BC environment exposes (standard v2.0, Microsoft routes, and custom publisher/group/version APIs).',
+        'List every endpoint group the BC environment exposes: API routes plus ODataV4 when published web services are available.',
       inputSchema: profileArg,
     },
     safe(async ({ profile }) => (await getClient(profile)).listRoutes()),
@@ -174,7 +178,7 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
     'list_entities',
     {
       description:
-        'The collection tree: entity sets available per API route, from cached $metadata (auto-discovers on first use). Set refresh=true after publishing new APIs.',
+        'The collection tree: entity sets per API route and published ODataV4 web service, from cached $metadata. Set refresh=true after publishing endpoints.',
       inputSchema: {
         ...profileArg,
         route: z.string().optional().describe('Limit to one route path'),
@@ -305,7 +309,7 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
       inputSchema: {
         ...scopeArgs,
         entitySet: z.string(),
-        id: z.string().describe('Record key'),
+        id: recordKey.describe('Scalar record key or named key object for composite OData keys'),
         navProperty: z.string().describe('Navigation property name, e.g. "salesOrderLines"'),
       },
     },
@@ -321,7 +325,7 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
       inputSchema: {
         ...scopeArgs,
         entitySet: z.string(),
-        id: z.string().describe('Record key'),
+        id: recordKey.describe('Scalar record key or named key object for composite OData keys'),
       },
     },
     safe(async ({ profile, entitySet, id, route, company }) =>
@@ -332,7 +336,8 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
   server.registerTool(
     'create_record',
     {
-      description: 'Create a record in an entity set.',
+      description:
+        'Create a record in an API entity set or writable published ODataV4 page. Query services and non-editable pages reject writes.',
       inputSchema: {
         ...scopeArgs,
         entitySet: z.string(),
@@ -348,11 +353,11 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
     'update_record',
     {
       description:
-        'Update fields on a record. Concurrency-safe: fetches the current ETag, sends If-Match, and retries once on conflict.',
+        'Update fields on an API or writable published ODataV4 record. Accepts named composite keys. Concurrency-safe: fetches the current ETag, sends If-Match, and retries once on conflict.',
       inputSchema: {
         ...scopeArgs,
         entitySet: z.string(),
-        id: z.string().describe('Record key'),
+        id: recordKey.describe('Scalar record key or named key object for composite OData keys'),
         patch: z.record(z.unknown()).describe('Fields to change'),
       },
     },
@@ -364,11 +369,12 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
   server.registerTool(
     'delete_record',
     {
-      description: 'Delete a record (ETag handled automatically).',
+      description:
+        'Delete an API or writable published ODataV4 record. Accepts named composite keys; ETags are handled automatically.',
       inputSchema: {
         ...scopeArgs,
         entitySet: z.string(),
-        id: z.string().describe('Record key'),
+        id: recordKey.describe('Scalar record key or named key object for composite OData keys'),
       },
     },
     safe(async ({ profile, entitySet, id, route, company }) => {

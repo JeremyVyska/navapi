@@ -46,6 +46,7 @@ export {
   findCompany,
   type ListOptions,
   type ListResult,
+  ODATA_V4_ROUTE,
   type RecordOptions,
   STANDARD_ROUTE,
 } from './client.js';
@@ -72,7 +73,14 @@ export {
   resolveSecretStore,
   type SecretStore,
 } from './profiles.js';
-export { buildQueryString, formatKey, isGuid, type ODataQuery } from './query.js';
+export {
+  buildQueryString,
+  formatKey,
+  isGuid,
+  type ODataKeyValue,
+  type ODataQuery,
+  type RecordKey,
+} from './query.js';
 export { parseRoutesResponse } from './routes.js';
 export type {
   ApiRoute,

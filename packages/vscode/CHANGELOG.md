@@ -3,6 +3,17 @@
 All notable changes to the **navapi** extension are documented here. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.2.4
+
+- Added read-only discovery and browsing for published ODataV4 page and query
+  web services. They appear under **ODataV4** in the Endpoint Browser and use
+  the existing filtering, selection, sorting, counts, and paging experience.
+- Fixed opening the tenant-scoped ODataV4 `Company` entity set.
+- OData read errors now include the attempted request URL for easier diagnosis.
+- Added ODataV4 create, update, and delete support to core, CLI, and MCP,
+  including named composite keys. The VS Code records browser remains
+  read-only.
+
 ## 0.2.1
 
 - Marketplace listing: reorganized so the core functionality leads, with the

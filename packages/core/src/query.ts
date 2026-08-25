@@ -28,11 +28,30 @@ export function buildQueryString(query?: ODataQuery): string {
 
 const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+export type ODataKeyValue = string | number | boolean;
+export type RecordKey = string | Record<string, ODataKeyValue>;
+
 export function isGuid(value: string): boolean {
   return GUID_RE.test(value);
 }
 
-/** Formats a single key for OData addressing: GUIDs bare, everything else quoted. */
-export function formatKey(id: string): string {
-  return isGuid(id) ? id : `'${id.replace(/'/g, "''")}'`;
+function formatKeyValue(value: ODataKeyValue): string {
+  if (typeof value === 'string') {
+    return isGuid(value) ? value : `'${value.replace(/'/g, "''")}'`;
+  }
+  if (typeof value === 'number' && !Number.isFinite(value)) {
+    throw new TypeError('OData record keys cannot contain non-finite numbers.');
+  }
+  return String(value);
+}
+
+/**
+ * Formats a scalar or named composite key for OData addressing. Scalar GUIDs
+ * stay bare for BC API compatibility; strings are quoted and escaped.
+ */
+export function formatKey(key: RecordKey): string {
+  if (typeof key === 'string') return formatKeyValue(key);
+  const entries = Object.entries(key);
+  if (!entries.length) throw new TypeError('OData record key objects cannot be empty.');
+  return entries.map(([name, value]) => `${name}=${formatKeyValue(value)}`).join(',');
 }

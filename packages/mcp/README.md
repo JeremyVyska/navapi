@@ -11,7 +11,8 @@ Model Context Protocol server for Microsoft Dynamics 365 Business Central. Agent
 | `list_routes` | Every API route the environment exposes |
 | `list_entities` | Collection tree per route, from cached `$metadata` (auto-discovers) |
 | `get_entity_schema` | Properties, keys, navigation properties, bound actions |
-| `get_records` / `get_record` | OData queries with filter/select/top/…; returns `count` (opt-in), `nextLink`, and the exact `queryUrl` |
+| `get_records` / `get_record` | API and published ODataV4 queries with filter/select/top/…; returns `count` (opt-in), `nextLink`, and the exact `queryUrl` |
+| `create_record` / `update_record` / `delete_record` | CRUD for APIs and writable published ODataV4 pages; scalar and named composite keys |
 | `get_next_page` | Continue a paged `get_records` result from its `nextLink` |
 | `get_navigation` | Fetch a record's navigation property (order lines, currency, …) |
 | `create_record` / `update_record` / `delete_record` | Writes with transparent ETag handling |

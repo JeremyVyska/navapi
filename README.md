@@ -53,6 +53,11 @@ navapi action salesOrders <id> shipAndInvoice      # bound actions, namespace-qu
 navapi batch --body bulk.json      # OData $batch with {company} substitution
 navapi discover                    # every route + entity on this env, cached
 navapi discover customer --schema  # show the shape
+navapi get Customer --route ODataV4 --top 10  # published page/query web service
+navapi post Customer --route ODataV4 --body customer.json
+navapi patch SalesLine --route ODataV4 \
+  --key '{"Document_Type":"Order","Document_No":"SO-1","Line_No":10000}' \
+  --set Quantity=2
 ```
 
 Or from an agent, via MCP:
@@ -109,6 +114,21 @@ navapi/
 5. **Batching is a first-class citizen.** `$batch` support from day one — bulk ops are where BC APIs get slow.
 6. **Same brain, four faces.** Any capability added to `core` is instantly available to CLI, VS Code, and MCP.
 
+## Published ODataV4 web services
+
+navapi discovers published page and query web services alongside API routes. In the VS Code
+Endpoint Browser they appear under **ODataV4**; the CLI and MCP use `route: "ODataV4"`.
+Discovery reads the `/ODataV4/` service document and combines it with `/ODataV4/$metadata`, so
+filtering, field selection, sorting, counts, and server-driven paging use the same query tooling as
+API endpoints. Company scope uses the immutable `Company(Id=<guid>)` form.
+
+The CLI, MCP server, and core library support create, update, and delete for writable published
+pages. Use a scalar record ID for single-key services or a named key object for OData services with
+composite keys. Query web services and non-editable pages remain read-only as enforced by Business
+Central. ODataV4 actions and JSON `$batch` aren't supported yet.
+
+The VS Code records browser intentionally remains read-only for both API and ODataV4 endpoints.
+
 ## Status
 
 🚀 **0.2.0 — live.** All four faces are built and tested (180+ tests) against a mock BC server, with native Data Braider support and GitHub Copilot (MCP) integration in the VS Code extension. The extension is on the VS Code Marketplace; `@navapi/core`, `@navapi/cli`, and `@navapi/mcp` publish to npm at 0.2.0.
@@ -118,6 +138,7 @@ Roadmap:
 - [x] Workspace scaffold + tooling (pnpm, tsup, changesets, vitest, biome)
 - [x] `@navapi/core`: OAuth client credentials, HTTP client, ETag handling
 - [x] `@navapi/core`: `$metadata` discovery + on-disk cache (routes enumerated via the runtime API's `apiRoutes`, with `/api/routes` and `v2.0` fallbacks)
+- [x] Read-only discovery and browsing for published `/ODataV4` page/query web services
 - [x] `navapi` CLI: `profile`, `get`, `post`, `patch`, `delete`, `discover` (+ `routes`, `ls`, `companies`)
 - [x] `@navapi/core`: `$batch` support (JSON batch, `{company}` substitution, atomicity groups)
 - [x] `@navapi/core`: bound actions (`Microsoft.NAV.*`, namespace-qualified from cached metadata)

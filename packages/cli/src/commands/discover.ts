@@ -85,11 +85,11 @@ export function registerDiscover(program: Command): void {
   program
     .command('discover [term]')
     .description(
-      'Ingest $metadata from every API route and browse the result. ' +
+      'Ingest $metadata from every API route and published ODataV4 service. ' +
         'With a term: search entity sets; add --schema for the full shape.',
     )
     .option('--refresh', 'Refetch metadata even if cached')
-    .option('--route <route>', 'Limit to one route (e.g. v2.0 or publisher/group/v1.0)')
+    .option('--route <route>', 'Limit to one route (e.g. v2.0, publisher/group/v1.0, ODataV4)')
     .option('--schema', 'Show the full schema for matching entity sets')
     .option('--json', 'JSON output')
     .action(async (term: string | undefined, opts, cmd) => {
@@ -197,7 +197,7 @@ export function registerDiscover(program: Command): void {
 
   program
     .command('routes')
-    .description('List every API route this environment exposes')
+    .description('List API routes and the ODataV4 service catalog')
     .option('--json', 'JSON output')
     .action(async (opts, cmd) => {
       const globals = cmd.optsWithGlobals();
