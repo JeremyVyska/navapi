@@ -24,6 +24,9 @@ Profiles are shared with the `navapi` CLI — create them there:
 
 ```bash
 navapi profile add contoso-prod --tenant ... --client-id ... --environment Production --company "..."
+
+# Or with no app registration, using the identity `az login` is signed in with:
+navapi profile add contoso-dev --tenant ... --environment Sandbox-UAT --auth azureCli
 ```
 
 Then register the server with your MCP host (stdio transport):

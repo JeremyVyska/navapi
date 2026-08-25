@@ -6,6 +6,18 @@ import { configDir, createClient, profileStore, secretStore } from '../context.j
 import { emitJson, printTable, wantJson } from '../output.js';
 import { promptSecret } from '../prompt.js';
 
+type AuthType = 'clientCredentials' | 'azureCli';
+
+/** Accepts the spellings people actually type: azureCli, azure-cli, az-cli. */
+export function parseAuthType(value: string): AuthType {
+  const key = value.toLowerCase().replace(/[^a-z]/g, '');
+  if (key === 'azurecli' || key === 'azcli' || key === 'az') return 'azureCli';
+  if (key === 'clientcredentials' || key === 'clientcredential') return 'clientCredentials';
+  throw new NavApiError(
+    `Unknown --auth value "${value}". Use clientCredentials (default) or azureCli.`,
+  );
+}
+
 export function registerProfile(program: Command): void {
   const profile = program
     .command('profile')
@@ -16,40 +28,63 @@ export function registerProfile(program: Command): void {
     .command('add <name>')
     .description('Add or update a profile pinned to a BC environment')
     .requiredOption('--tenant <tenantId>', 'Entra ID tenant ID or domain')
-    .requiredOption('--client-id <clientId>', 'App registration client ID')
     .requiredOption('--environment <environment>', 'BC environment name (e.g. Production)')
+    .option('--auth <type>', 'Auth strategy: clientCredentials (default) or azureCli')
+    .option('--client-id <clientId>', 'App registration client ID (client-credentials auth)')
     .option('--company <company>', 'Default company (name, displayName, or GUID)')
     .option('--secret <secret>', 'Client secret (omit to be prompted, or set NAVAPI_CLIENT_SECRET)')
     .option('--base-url <url>', 'Override the BC API host')
     .option('--default', 'Make this the default profile')
     .action(async (name: string, opts) => {
-      let secret: string | undefined = opts.secret ?? process.env.NAVAPI_CLIENT_SECRET ?? undefined;
-      if (!secret) {
-        if (!process.stdin.isTTY) {
-          throw new NavApiError(
-            'No secret provided. Use --secret or the NAVAPI_CLIENT_SECRET env var.',
-          );
-        }
-        secret = await promptSecret(`Client secret for ${name}: `);
+      const authType = opts.auth ? parseAuthType(opts.auth) : 'clientCredentials';
+      const azureCli = authType === 'azureCli';
+
+      // Commander can't make --client-id conditionally required, so it's an
+      // optional flag the client-credentials path enforces by hand.
+      if (!azureCli && !opts.clientId) {
+        throw new NavApiError(
+          "required option '--client-id <clientId>' not specified " +
+            '(or use --auth azureCli, which needs no app registration).',
+        );
       }
-      if (!secret) throw new NavApiError('Empty secret; profile not saved.');
+
+      let secret: string | undefined;
+      if (!azureCli) {
+        secret = opts.secret ?? process.env.NAVAPI_CLIENT_SECRET ?? undefined;
+        if (!secret) {
+          if (!process.stdin.isTTY) {
+            throw new NavApiError(
+              'No secret provided. Use --secret or the NAVAPI_CLIENT_SECRET env var.',
+            );
+          }
+          secret = await promptSecret(`Client secret for ${name}: `);
+        }
+        if (!secret) throw new NavApiError('Empty secret; profile not saved.');
+      }
 
       await profileStore().upsert(
         {
           name,
           tenantId: opts.tenant,
-          clientId: opts.clientId,
+          authType,
+          clientId: azureCli ? undefined : opts.clientId,
           environment: opts.environment,
           company: opts.company,
           baseUrl: opts.baseUrl,
         },
         { makeDefault: Boolean(opts.default) },
       );
-      const { store, backend } = await secretStore();
-      await store.set(name, secret);
+      let how: string;
+      if (secret) {
+        const { store, backend } = await secretStore();
+        await store.set(name, secret);
+        how = `secret in ${backend}`;
+      } else {
+        how = 'auth: Azure CLI — no secret stored';
+      }
       console.log(
         `${pc.green('✔')} Profile ${pc.bold(name)} saved ` +
-          pc.dim(`(${opts.environment} @ ${opts.tenant}, secret in ${backend})`),
+          pc.dim(`(${opts.environment} @ ${opts.tenant}, ${how})`),
       );
       console.log(pc.dim(`Next: navapi discover -p ${name}`));
     });

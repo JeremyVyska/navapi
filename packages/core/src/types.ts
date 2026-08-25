@@ -4,8 +4,14 @@ export interface ProfileConfig {
   name: string;
   /** Entra ID (Azure AD) tenant ID or domain. */
   tenantId: string;
-  /** App registration client ID used for client-credentials auth. */
-  clientId: string;
+  /**
+   * Auth strategy. `clientCredentials` (the default when absent, so profiles
+   * written before this field stay valid) uses an app registration;
+   * `azureCli` borrows the signed-in identity from the az CLI.
+   */
+  authType?: 'clientCredentials' | 'azureCli';
+  /** App registration client ID. Required for client-credentials auth only. */
+  clientId?: string;
   /** BC environment name, e.g. `Production` or `Sandbox-UAT`. */
   environment: string;
   /** Default company (display name, name, or GUID). Optional; can be passed per call. */

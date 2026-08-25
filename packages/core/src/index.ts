@@ -1,6 +1,11 @@
 export {
+  type AzExec,
+  type AzExecResult,
+  AzureCliAuth,
+  type AzureCliAuthOptions,
   ClientCredentialsAuth,
   type ClientCredentialsOptions,
+  DEFAULT_RESOURCE,
   DEFAULT_SCOPE,
   StaticTokenProvider,
   type TokenProvider,

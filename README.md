@@ -55,6 +55,21 @@ navapi discover                    # every route + entity on this env, cached
 navapi discover customer --schema  # show the shape
 ```
 
+### No app registration: Azure CLI auth
+
+If you are already signed in with `az login`, skip the app registration entirely. `--auth azureCli` gets its token from `az account get-access-token`, so there is no client ID and no secret to store:
+
+```bash
+az login --tenant $TENANT_ID --scope https://api.businesscentral.dynamics.com/.default
+
+navapi profile add contoso-dev \
+  --tenant $TENANT_ID \
+  --environment Sandbox-UAT \
+  --auth azureCli
+```
+
+The profile then works exactly like any other, in the CLI, the VS Code extension, and the MCP server. You are calling BC as yourself, so you get your own permissions — which is what you want for exploring an environment, and not what you want for an unattended integration. Client-credentials auth stays the default.
+
 Or from an agent, via MCP:
 
 ```jsonc
@@ -105,7 +120,7 @@ navapi/
 1. **Discovery over documentation.** Hit `$metadata`, cache it, autocomplete from it. Don't make users read Microsoft Learn to find the entity name.
 2. **Agent-first output.** Every command supports `--json` with a stable, semver'd schema. `isTTY` detection means humans get pretty output and pipes get JSON automatically.
 3. **ETags are not the user's problem.** `patch` and `delete` transparently GET-then-modify with `If-Match`. Concurrency safety by default.
-4. **Profiles, not env vars.** Named profiles for every customer × environment combo. Secrets go to the **OS keychain** (Credential Manager / Keychain / libsecret via `@napi-rs/keyring`), with a file fallback on platforms without one — existing file secrets migrate to the keychain automatically on first use. `navapi secrets status` shows where every secret lives; `NAVAPI_CLIENT_SECRET` covers CI and `NAVAPI_SECRET_BACKEND=file` opts out.
+4. **Profiles, not env vars.** Named profiles for every customer × environment combo. Secrets go to the **OS keychain** (Credential Manager / Keychain / libsecret via `@napi-rs/keyring`), with a file fallback on platforms without one — existing file secrets migrate to the keychain automatically on first use. `navapi secrets status` shows where every secret lives; `NAVAPI_CLIENT_SECRET` covers CI and `NAVAPI_SECRET_BACKEND=file` opts out. Profiles created with `--auth azureCli` have no secret to store at all.
 5. **Batching is a first-class citizen.** `$batch` support from day one — bulk ops are where BC APIs get slow.
 6. **Same brain, four faces.** Any capability added to `core` is instantly available to CLI, VS Code, and MCP.
 

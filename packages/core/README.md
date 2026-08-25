@@ -14,6 +14,8 @@ const client = new BcClient({
     company: 'CRONUS International Ltd.',
   },
   auth: new ClientCredentialsAuth({ tenantId: '...', clientId: '...', clientSecret: '...' }),
+  // or, to use the identity you're already signed in with via `az login`:
+  // auth: new AzureCliAuth({ tenantId: '...' }),
 });
 
 // Discovery: enumerate every API route, ingest + cache $metadata per route

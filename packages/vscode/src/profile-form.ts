@@ -1,4 +1,5 @@
 import {
+  AzureCliAuth,
   BcClient,
   type BcRecord,
   ClientCredentialsAuth,
@@ -15,6 +16,7 @@ import { getNonce } from './webview.js';
 export interface ProfileFormValues {
   name: string;
   tenantId: string;
+  authType: 'clientCredentials' | 'azureCli';
   clientId: string;
   clientSecret: string;
   environment: string;
@@ -35,22 +37,30 @@ function embedJson(value: unknown): string {
     .replace(new RegExp(String.fromCharCode(0x2029), 'g'), '\\u2029');
 }
 
+const isAzureCli = (values: ProfileFormValues): boolean => values.authType === 'azureCli';
+
 /** Connects with the form's values (not saved state) and returns the companies. */
-async function testConnection(values: ProfileFormValues, secret: string): Promise<BcRecord[]> {
+async function testConnection(
+  values: ProfileFormValues,
+  secret: string | undefined,
+): Promise<BcRecord[]> {
   const client = new BcClient({
     profile: {
       name: values.name || '__test__',
       tenantId: values.tenantId,
-      clientId: values.clientId,
+      authType: values.authType,
+      clientId: isAzureCli(values) ? undefined : values.clientId,
       environment: values.environment,
       baseUrl: values.baseUrl || undefined,
     },
-    auth: new ClientCredentialsAuth({
-      tenantId: values.tenantId,
-      clientId: values.clientId,
-      clientSecret: secret,
-      authorityBase: process.env.NAVAPI_AUTHORITY,
-    }),
+    auth: isAzureCli(values)
+      ? new AzureCliAuth({ tenantId: values.tenantId })
+      : new ClientCredentialsAuth({
+          tenantId: values.tenantId,
+          clientId: values.clientId,
+          clientSecret: secret ?? '',
+          authorityBase: process.env.NAVAPI_AUTHORITY,
+        }),
   });
   return client.listCompanies();
 }
@@ -88,6 +98,7 @@ export class ProfileFormPanel {
       values: {
         name: existing?.name ?? '',
         tenantId: existing?.tenantId ?? '',
+        authType: existing?.authType ?? 'clientCredentials',
         clientId: existing?.clientId ?? '',
         clientSecret: '',
         environment: existing?.environment ?? '',
@@ -104,6 +115,7 @@ export class ProfileFormPanel {
 
   /** The form secret, or the stored one when editing with the field left blank. */
   private async resolveSecret(values: ProfileFormValues): Promise<string | undefined> {
+    if (isAzureCli(values)) return undefined; // az CLI auth has no secret
     if (values.clientSecret) return values.clientSecret;
     if (this.mode === 'edit' && this.originalName) {
       const { store } = await resolveSecretStore(defaultConfigDir());
@@ -115,7 +127,7 @@ export class ProfileFormPanel {
   private async handleTest(values: ProfileFormValues): Promise<void> {
     try {
       const secret = await this.resolveSecret(values);
-      if (!secret) throw new Error('Enter a client secret first.');
+      if (!secret && !isAzureCli(values)) throw new Error('Enter a client secret first.');
       const companies = await testConnection(values, secret);
       await this.panel.webview.postMessage({
         type: 'testResult',
@@ -146,17 +158,18 @@ export class ProfileFormPanel {
         }
       }
       const secret = await this.resolveSecret(values);
-      if (!secret) throw new Error('A client secret is required.');
+      if (!secret && !isAzureCli(values)) throw new Error('A client secret is required.');
       const name = this.mode === 'edit' && this.originalName ? this.originalName : values.name;
       await store.upsert({
         name,
         tenantId: values.tenantId,
-        clientId: values.clientId,
+        authType: values.authType,
+        clientId: isAzureCli(values) ? undefined : values.clientId,
         environment: values.environment,
         company: values.company || undefined,
         baseUrl: values.baseUrl || undefined,
       });
-      await (await resolveSecretStore(dir)).store.set(name, secret);
+      if (secret) await (await resolveSecretStore(dir)).store.set(name, secret);
       // A successful test already fetched companies; cache them for the tree.
       try {
         await saveCompanies(name, await testConnection(values, secret));
@@ -188,9 +201,10 @@ function renderFormHtml(init: FormInit, nonce: string): string {
   .sub { color: var(--vscode-descriptionForeground); font-size: 12px; margin-bottom: 20px; }
   label { display: block; font-size: 12px; font-weight: 600; margin: 14px 0 4px; }
   label .hint { font-weight: 400; color: var(--vscode-descriptionForeground); }
-  input { width: 100%; box-sizing: border-box; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, transparent); padding: 5px 8px; border-radius: 2px; }
-  input:focus { outline: 1px solid var(--vscode-focusBorder); }
+  input, select { width: 100%; box-sizing: border-box; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, transparent); padding: 5px 8px; border-radius: 2px; }
+  input:focus, select:focus { outline: 1px solid var(--vscode-focusBorder); }
   input[readonly] { opacity: .6; }
+  .hidden { display: none; }
   .row { display: flex; gap: 10px; margin-top: 22px; align-items: center; }
   button { border: none; padding: 6px 14px; border-radius: 2px; cursor: pointer; font-size: 13px; }
   #save { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
@@ -213,11 +227,21 @@ function renderFormHtml(init: FormInit, nonce: string): string {
   <label for="tenantId">Tenant ID <span class="hint">— Entra ID tenant GUID or domain</span></label>
   <input id="tenantId" placeholder="00000000-0000-0000-0000-000000000000">
 
-  <label for="clientId">Client ID <span class="hint">— app registration</span></label>
-  <input id="clientId">
+  <label for="authType">Authentication</label>
+  <select id="authType">
+    <option value="clientCredentials">App registration (client ID + secret)</option>
+    <option value="azureCli">Azure CLI — sign in as myself with az login</option>
+  </select>
 
-  <label for="clientSecret">Client secret</label>
-  <input id="clientSecret" type="password">
+  <div id="appRegFields">
+    <label for="clientId">Client ID <span class="hint">— app registration</span></label>
+    <input id="clientId">
+
+    <label for="clientSecret">Client secret</label>
+    <input id="clientSecret" type="password">
+  </div>
+
+  <div id="azCliNote" class="sub hidden">Uses the identity <code>az login</code> is signed in with — no app registration and no stored secret. You get your own Business Central permissions.</div>
 
   <label for="environment">Environment <span class="hint">— e.g. Production, Sandbox-UAT</span></label>
   <input id="environment" placeholder="Production">
@@ -238,9 +262,11 @@ function renderFormHtml(init: FormInit, nonce: string): string {
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const init = ${embedJson(init)};
-    const FIELDS = ['name', 'tenantId', 'clientId', 'clientSecret', 'environment', 'company', 'baseUrl'];
-    const REQUIRED = ['name', 'tenantId', 'clientId', 'environment'];
+    const FIELDS = ['name', 'tenantId', 'authType', 'clientId', 'clientSecret', 'environment', 'company', 'baseUrl'];
     const el = (id) => document.getElementById(id);
+    const azureCli = () => el('authType').value === 'azureCli';
+    const required = () =>
+      azureCli() ? ['name', 'tenantId', 'environment'] : ['name', 'tenantId', 'clientId', 'environment'];
 
     document.getElementById('heading').textContent =
       init.mode === 'edit' ? 'Edit Profile: ' + init.values.name : 'Add Profile';
@@ -250,6 +276,13 @@ function renderFormHtml(init: FormInit, nonce: string): string {
       el('name').readOnly = true;
       if (init.hasStoredSecret) el('clientSecret').placeholder = '(unchanged — leave blank to keep)';
     }
+
+    function applyAuthType() {
+      el('appRegFields').classList.toggle('hidden', azureCli());
+      el('azCliNote').classList.toggle('hidden', !azureCli());
+    }
+    el('authType').addEventListener('change', () => { applyAuthType(); setStatus('', true); });
+    applyAuthType();
 
     function values() {
       const out = {};
@@ -265,8 +298,8 @@ function renderFormHtml(init: FormInit, nonce: string): string {
 
     function validate(needSecret) {
       let firstBad;
-      const must = REQUIRED.slice();
-      if (needSecret && !(init.mode === 'edit' && init.hasStoredSecret)) must.push('clientSecret');
+      const must = required();
+      if (needSecret && !azureCli() && !(init.mode === 'edit' && init.hasStoredSecret)) must.push('clientSecret');
       for (const f of FIELDS) el(f).classList.remove('invalid');
       for (const f of must) {
         if (!el(f).value.trim()) {
@@ -279,11 +312,19 @@ function renderFormHtml(init: FormInit, nonce: string): string {
     }
 
     el('test').addEventListener('click', () => {
-      const must = ['tenantId', 'clientId', 'environment'];
+      const must = azureCli() ? ['tenantId', 'environment'] : ['tenantId', 'clientId', 'environment'];
       for (const f of FIELDS) el(f).classList.remove('invalid');
       let bad = false;
       for (const f of must) if (!el(f).value.trim()) { el(f).classList.add('invalid'); bad = true; }
-      if (bad) { setStatus('Tenant, client ID, and environment are needed to test.', false); return; }
+      if (bad) {
+        setStatus(
+          azureCli()
+            ? 'Tenant and environment are needed to test.'
+            : 'Tenant, client ID, and environment are needed to test.',
+          false,
+        );
+        return;
+      }
       el('test').disabled = true;
       setStatus('Connecting…', true);
       vscode.postMessage({ type: 'test', values: values() });

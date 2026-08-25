@@ -52,6 +52,20 @@ describe('ProfileStore', () => {
     await expect(store.get('contoso-prod')).rejects.toThrow(/not found/);
   });
 
+  it('round-trips an azureCli profile, which has no client ID', async () => {
+    const store = new ProfileStore(tmpDir);
+    await store.upsert({
+      name: 'az-profile',
+      tenantId: 't',
+      authType: 'azureCli',
+      environment: 'Sandbox-UAT',
+    });
+
+    const saved = await store.get('az-profile');
+    expect(saved.authType).toBe('azureCli');
+    expect(saved.clientId).toBeUndefined();
+  });
+
   it('gives a friendly error when nothing is configured', async () => {
     const store = new ProfileStore(tmpDir);
     await expect(store.get()).rejects.toThrow(/navapi profile add/);
