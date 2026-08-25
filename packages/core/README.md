@@ -9,7 +9,7 @@ const client = new BcClient({
   profile: {
     name: 'contoso-prod',
     tenantId: '...',
-    clientId: '...',
+    auth: { type: 'clientSecret', clientId: '...' },
     environment: 'Production',
     company: 'CRONUS International Ltd.',
   },

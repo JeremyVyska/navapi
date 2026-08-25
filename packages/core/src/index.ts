@@ -89,8 +89,10 @@ export type {
   CachedRouteMetadata,
   EntitySetInfo,
   NavigationPropertyInfo,
+  ProfileAuth,
   ProfileConfig,
   PropertyInfo,
   RouteDiscoveryResult,
   RouteMetadata,
+  StoredProfile,
 } from './types.js';

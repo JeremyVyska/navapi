@@ -139,9 +139,9 @@ export function registerProfile(program: Command): void {
         {
           name,
           tenantId: opts.tenant,
-          authType,
-          clientId: azureCli ? undefined : opts.clientId,
-          azAccount: azureCli ? azAccount : undefined,
+          auth: azureCli
+            ? { type: 'azureCli', account: azAccount || undefined }
+            : { type: 'clientSecret', clientId: opts.clientId },
           environment: opts.environment,
           company: opts.company,
           baseUrl: opts.baseUrl,

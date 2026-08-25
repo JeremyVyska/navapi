@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -8,6 +8,7 @@ import {
   type KeyringFactory,
   LayeredSecretStore,
   MetadataCache,
+  type ProfileConfig,
   ProfileStore,
   resolveSecretStore,
 } from '../src/index.js';
@@ -22,10 +23,10 @@ afterEach(async () => {
   await rm(tmpDir, { recursive: true, force: true });
 });
 
-const PROFILE = {
+const PROFILE: ProfileConfig = {
   name: 'contoso-prod',
   tenantId: 't',
-  clientId: 'c',
+  auth: { type: 'clientSecret', clientId: 'c' },
   environment: 'Production',
   company: 'CRONUS',
 };
@@ -57,13 +58,48 @@ describe('ProfileStore', () => {
     await store.upsert({
       name: 'az-profile',
       tenantId: 't',
-      authType: 'azureCli',
+      auth: { type: 'azureCli', account: 'me@example.com' },
       environment: 'Sandbox-UAT',
     });
 
     const saved = await store.get('az-profile');
-    expect(saved.authType).toBe('azureCli');
-    expect(saved.clientId).toBeUndefined();
+    expect(saved.auth).toEqual({ type: 'azureCli', account: 'me@example.com' });
+  });
+
+  it('reads a profile written before `auth` existed as client-credentials', async () => {
+    // The only other shape ever released: clientId at the top level.
+    await mkdir(tmpDir, { recursive: true });
+    await writeFile(
+      path.join(tmpDir, 'profiles.json'),
+      JSON.stringify({
+        profiles: {
+          legacy: {
+            name: 'legacy',
+            tenantId: 't',
+            clientId: 'old-client',
+            environment: 'Production',
+          },
+        },
+        defaultProfile: 'legacy',
+      }),
+      'utf8',
+    );
+
+    const saved = await new ProfileStore(tmpDir).get('legacy');
+    expect(saved.auth).toEqual({ type: 'clientSecret', clientId: 'old-client' });
+  });
+
+  it('leaves a legacy file on disk until something actually changes it', async () => {
+    await mkdir(tmpDir, { recursive: true });
+    const file = path.join(tmpDir, 'profiles.json');
+    const original = JSON.stringify({
+      profiles: { legacy: { name: 'legacy', tenantId: 't', clientId: 'c', environment: 'P' } },
+    });
+    await writeFile(file, original, 'utf8');
+
+    await new ProfileStore(tmpDir).listAll(); // a plain read must not rewrite
+
+    expect(await readFile(file, 'utf8')).toBe(original);
   });
 
   it('gives a friendly error when nothing is configured', async () => {

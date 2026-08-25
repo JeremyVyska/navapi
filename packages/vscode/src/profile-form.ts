@@ -51,9 +51,9 @@ async function testConnection(
     profile: {
       name: values.name || '__test__',
       tenantId: values.tenantId,
-      authType: values.authType,
-      clientId: isAzureCli(values) ? undefined : values.clientId,
-      azAccount: isAzureCli(values) ? values.azAccount || undefined : undefined,
+      auth: isAzureCli(values)
+        ? { type: 'azureCli', account: values.azAccount || undefined }
+        : { type: 'clientSecret', clientId: values.clientId },
       environment: values.environment,
       baseUrl: values.baseUrl || undefined,
     },
@@ -102,10 +102,10 @@ export class ProfileFormPanel {
       values: {
         name: existing?.name ?? '',
         tenantId: existing?.tenantId ?? '',
-        authType: existing?.authType ?? 'clientCredentials',
-        clientId: existing?.clientId ?? '',
+        authType: existing?.auth.type === 'azureCli' ? 'azureCli' : 'clientCredentials',
+        clientId: existing?.auth.type === 'clientSecret' ? existing.auth.clientId : '',
         clientSecret: '',
-        azAccount: existing?.azAccount ?? '',
+        azAccount: existing?.auth.type === 'azureCli' ? (existing.auth.account ?? '') : '',
         environment: existing?.environment ?? '',
         company: existing?.company ?? '',
         baseUrl: existing?.baseUrl ?? '',
@@ -195,9 +195,9 @@ export class ProfileFormPanel {
       await store.upsert({
         name,
         tenantId: values.tenantId,
-        authType: values.authType,
-        clientId: isAzureCli(values) ? undefined : values.clientId,
-        azAccount: isAzureCli(values) ? values.azAccount || undefined : undefined,
+        auth: isAzureCli(values)
+          ? { type: 'azureCli', account: values.azAccount || undefined }
+          : { type: 'clientSecret', clientId: values.clientId },
         environment: values.environment,
         company: values.company || undefined,
         baseUrl: values.baseUrl || undefined,

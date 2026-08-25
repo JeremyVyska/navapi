@@ -22,7 +22,11 @@ const BASE = { tenantId: 'contoso.onmicrosoft.com', environment: 'Sandbox-UAT' }
 
 describe('createClientForProfile', () => {
   it('builds an azureCli-auth client without any stored secret', async () => {
-    await new ProfileStore(tmpDir).upsert({ ...BASE, name: 'az-profile', authType: 'azureCli' });
+    await new ProfileStore(tmpDir).upsert({
+      ...BASE,
+      name: 'az-profile',
+      auth: { type: 'azureCli' },
+    });
 
     const client = await createClientForProfile('az-profile', { configDir: tmpDir });
 
@@ -30,7 +34,11 @@ describe('createClientForProfile', () => {
   });
 
   it('still demands a secret for client-credentials profiles', async () => {
-    await new ProfileStore(tmpDir).upsert({ ...BASE, name: 'cc-profile', clientId: 'client-1' });
+    await new ProfileStore(tmpDir).upsert({
+      ...BASE,
+      name: 'cc-profile',
+      auth: { type: 'clientSecret', clientId: 'client-1' },
+    });
 
     await expect(createClientForProfile('cc-profile', { configDir: tmpDir })).rejects.toThrow(
       /No client secret stored/,

@@ -2,11 +2,38 @@ import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { defaultConfigDir } from './cache.js';
 import { NavApiError } from './errors.js';
-import type { ProfileConfig } from './types.js';
+import type { ProfileAuth, ProfileConfig, StoredProfile } from './types.js';
 
 interface ProfilesFile {
   profiles: Record<string, ProfileConfig>;
   defaultProfile?: string;
+}
+
+/** The file as it may actually be on disk, including pre-`auth` profiles. */
+interface StoredProfilesFile {
+  profiles: Record<string, StoredProfile>;
+  defaultProfile?: string;
+}
+
+/**
+ * Reads a profile written by any version. Before `auth` existed a profile
+ * carried `clientId` at the top level and meant client-credentials; that is
+ * the only other shape ever released, so it is the only one migrated.
+ *
+ * Migration happens in memory on read. The file is only rewritten when
+ * something actually changes it, so merely running a command doesn't move a
+ * profile to a format older versions can't read.
+ */
+function normalizeProfile(stored: StoredProfile): ProfileConfig {
+  const { clientId, auth, ...rest } = stored;
+  return { ...rest, auth: auth ?? inferAuth(clientId) };
+}
+
+function inferAuth(clientId?: string): ProfileAuth {
+  // No clientId and no auth is a profile we can't authenticate. Rather than
+  // guess, record it as client-credentials with an empty client ID so the
+  // factory can raise the error that names the profile and the fix.
+  return { type: 'clientSecret', clientId: clientId ?? '' };
 }
 
 /** Named profiles stored in `<configDir>/profiles.json` (no secrets in here). */
@@ -22,8 +49,12 @@ export class ProfileStore {
   async load(): Promise<ProfilesFile> {
     try {
       const raw = await readFile(this.file, 'utf8');
-      const parsed = JSON.parse(raw) as ProfilesFile;
-      return { profiles: parsed.profiles ?? {}, defaultProfile: parsed.defaultProfile };
+      const parsed = JSON.parse(raw) as StoredProfilesFile;
+      const profiles: Record<string, ProfileConfig> = {};
+      for (const [name, stored] of Object.entries(parsed.profiles ?? {})) {
+        profiles[name] = normalizeProfile(stored);
+      }
+      return { profiles, defaultProfile: parsed.defaultProfile };
     } catch {
       return { profiles: {} };
     }

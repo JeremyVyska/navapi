@@ -21,7 +21,7 @@ async function locateSecrets(): Promise<{ keychainAvailable: boolean; rows: Secr
   for (const p of profiles) {
     rows.push({
       profile: p.name,
-      secretRequired: p.authType !== 'azureCli',
+      secretRequired: p.auth.type !== 'azureCli',
       keychain: keychain ? (await keychain.get(p.name)) !== undefined : false,
       file: (await file.get(p.name)) !== undefined,
     });

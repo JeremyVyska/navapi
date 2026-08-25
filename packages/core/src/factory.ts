@@ -42,8 +42,16 @@ async function createAuth(
 ): Promise<TokenProvider> {
   // Azure CLI auth has no secret to resolve — don't send it down the
   // client-credentials path, which would fail on the missing secret.
-  if (profile.authType === 'azureCli') {
-    return new AzureCliAuth({ tenantId: profile.tenantId, account: profile.azAccount });
+  if (profile.auth.type === 'azureCli') {
+    return new AzureCliAuth({ tenantId: profile.tenantId, account: profile.auth.account });
+  }
+  // Client ID first: a profile missing both reads as malformed, and naming
+  // the absent client ID says more than asking for a secret to go with it.
+  if (!profile.auth.clientId) {
+    throw new NavApiError(
+      `Profile "${profile.name}" has no client ID. ` +
+        `Re-run: navapi profile add ${profile.name} ... --client-id <id>.`,
+    );
   }
   const secret =
     process.env.NAVAPI_CLIENT_SECRET ??
@@ -54,15 +62,9 @@ async function createAuth(
         `Re-run: navapi profile add ${profile.name} ... --secret <secret>, or set NAVAPI_CLIENT_SECRET.`,
     );
   }
-  if (!profile.clientId) {
-    throw new NavApiError(
-      `Profile "${profile.name}" has no client ID. ` +
-        `Re-run: navapi profile add ${profile.name} ... --client-id <id>.`,
-    );
-  }
   return new ClientCredentialsAuth({
     tenantId: profile.tenantId,
-    clientId: profile.clientId,
+    clientId: profile.auth.clientId,
     clientSecret: secret,
     authorityBase: process.env.NAVAPI_AUTHORITY,
     fetch: opts.fetch,
