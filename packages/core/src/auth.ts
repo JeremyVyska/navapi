@@ -191,6 +191,9 @@ export async function listAzureCliAccounts(
   } catch (cause) {
     throw new AuthError('Could not parse the JSON output of az account list', { cause });
   }
+  if (!Array.isArray(raw)) {
+    throw new AuthError('az account list did not return a list of accounts');
+  }
   return raw
     .filter((a): a is RawAzAccount & { id: string } => Boolean(a.id && a.tenantId && a.user?.name))
     .map((a) => ({
@@ -199,6 +202,34 @@ export async function listAzureCliAccounts(
       user: a.user?.name as string,
       name: a.name,
     }));
+}
+
+/**
+ * The account az is currently signed in as, or undefined if it isn't.
+ * This is the identity az uses for `--tenant`, which is how an identity
+ * reaches a tenant it holds no account in — delegated admin, or a guest invite.
+ */
+export async function activeAzureCliAccount(
+  options: AzureCliListOptions = {},
+): Promise<AzureCliAccount | undefined> {
+  const exec = options.exec ?? defaultExec;
+  const azPath = options.azPath ?? 'az';
+  let stdout: string;
+  try {
+    ({ stdout } = await exec(azPath, ['account', 'show', '-o', 'json']));
+  } catch (cause) {
+    const stderr = (cause as { stderr?: string })?.stderr ?? '';
+    if (/az login/i.test(stderr)) return undefined;
+    throw describeAzFailure(cause, 'az login');
+  }
+  let raw: RawAzAccount;
+  try {
+    raw = JSON.parse(stdout);
+  } catch {
+    return undefined;
+  }
+  if (!raw.id || !raw.tenantId || !raw.user?.name) return undefined;
+  return { id: raw.id, tenantId: raw.tenantId, user: raw.user.name, name: raw.name };
 }
 
 /** Turns az's exit codes and stderr into something the user can act on. */
@@ -247,7 +278,7 @@ export class AzureCliAuth implements TokenProvider {
   private readonly azPath: string;
   private readonly exec: AzExec;
   private cached?: { token: string; expiresAt: number };
-  private accountId?: string;
+  private selector?: string[];
   private inflight?: Promise<string>;
 
   constructor(options: AzureCliAuthOptions) {
@@ -292,30 +323,52 @@ export class AzureCliAuth implements TokenProvider {
    */
   private async resolveAccountSelector(): Promise<string[]> {
     if (!this.account) return ['--tenant', this.tenantId];
-    if (this.accountId) return ['--subscription', this.accountId];
+    if (this.selector) return this.selector;
 
-    const accounts = await listAzureCliAccounts({ azPath: this.azPath, exec: this.exec });
+    const opts = { azPath: this.azPath, exec: this.exec };
     const wanted = this.account.toLowerCase();
+    const is = (a: AzureCliAccount) =>
+      a.id.toLowerCase() === wanted || a.user.toLowerCase() === wanted;
+
+    const accounts = await listAzureCliAccounts(opts);
     const match = accounts.find(
-      (a) =>
-        a.tenantId.toLowerCase() === this.tenantId.toLowerCase() &&
-        (a.id.toLowerCase() === wanted || a.user.toLowerCase() === wanted),
+      (a) => a.tenantId.toLowerCase() === this.tenantId.toLowerCase() && is(a),
     );
-    if (!match) throw this.noSuchAccount(accounts);
-    if (!ACCOUNT_ID_PATTERN.test(match.id)) {
-      throw new AuthError(`az returned an unusable account id: ${match.id}`);
+    if (match) {
+      if (!ACCOUNT_ID_PATTERN.test(match.id)) {
+        throw new AuthError(`az returned an unusable account id: ${match.id}`);
+      }
+      this.selector = ['--subscription', match.id];
+      return this.selector;
     }
-    this.accountId = match.id;
-    return ['--subscription', match.id];
+
+    // No account in this tenant is normal for delegated admin (GDAP) or a
+    // guest invite: the identity reaches the tenant without az holding a
+    // subscription there. Only `--tenant` can express that, and it always
+    // uses az's active identity — so this is available for that identity
+    // alone. Falling back for any other one would quietly authenticate as
+    // somebody the profile didn't ask for.
+    const active = await activeAzureCliAccount(opts);
+    if (active && is(active)) {
+      this.selector = ['--tenant', this.tenantId];
+      return this.selector;
+    }
+    throw this.cannotSelect(accounts, active);
   }
 
-  /** Says which accounts az does have, so the fix doesn't need guesswork. */
-  private noSuchAccount(accounts: AzureCliAccount[]): AuthError {
-    const known = accounts.map((a) => `${a.user} (tenant ${a.tenantId})`).join(', ');
+  /** Says what az does have, so the fix doesn't need guesswork. */
+  private cannotSelect(accounts: AzureCliAccount[], active?: AzureCliAccount): AuthError {
+    if (!accounts.length && !active) {
+      return new AuthError(`az is not signed in to any account. Run: ${this.loginHint}`);
+    }
+    const identities = [...new Set(accounts.map((a) => a.user))].join(', ');
     return new AuthError(
-      `az has no account for "${this.account}" in tenant ${this.tenantId}. ` +
-        (known ? `az is signed in as: ${known}. ` : 'az is not signed in to any account. ') +
-        `Sign that identity in for this tenant: ${this.loginHint}`,
+      `az cannot authenticate as "${this.account}" for tenant ${this.tenantId}: ` +
+        `az holds no account for it in that tenant, and it is not the account az is ` +
+        `currently signed in as${active ? ` (that is ${active.user})` : ''}. ` +
+        `Either sign it in for this tenant — ${this.loginHint} — ` +
+        `or set the profile to an identity that can reach the tenant` +
+        (identities ? `. az knows: ${identities}` : ''),
     );
   }
 

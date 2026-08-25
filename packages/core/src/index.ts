@@ -5,6 +5,7 @@ export {
   AzureCliAuth,
   type AzureCliAuthOptions,
   type AzureCliListOptions,
+  activeAzureCliAccount,
   ClientCredentialsAuth,
   type ClientCredentialsOptions,
   DEFAULT_RESOURCE,

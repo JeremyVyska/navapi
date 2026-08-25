@@ -1,5 +1,6 @@
 import {
   AzureCliAuth,
+  activeAzureCliAccount,
   BcClient,
   type BcRecord,
   ClientCredentialsAuth,
@@ -132,8 +133,20 @@ export class ProfileFormPanel {
   /** Feeds the identity picker, so nobody has to remember their az accounts. */
   private async handleAzAccounts(): Promise<void> {
     try {
-      const accounts = await listAzureCliAccounts();
-      await this.panel.webview.postMessage({ type: 'azAccountsResult', ok: true, accounts });
+      const [accounts, active] = await Promise.all([
+        listAzureCliAccounts(),
+        activeAzureCliAccount(),
+      ]);
+      // Collapse to identities: the same one often reaches tenants az holds no
+      // account in, so listing it per tenant suggests a binding that isn't real.
+      const identities = [...new Set(accounts.map((a) => a.user))].map((user) => ({
+        user,
+        current: user.toLowerCase() === active?.user.toLowerCase(),
+      }));
+      if (active && !identities.some((i) => i.current)) {
+        identities.push({ user: active.user, current: true });
+      }
+      await this.panel.webview.postMessage({ type: 'azAccountsResult', ok: true, identities });
     } catch (err) {
       await this.panel.webview.postMessage({
         type: 'azAccountsResult',
@@ -273,7 +286,7 @@ function renderFormHtml(init: FormInit, nonce: string): string {
     <div id="azAccountStatus" class="hint"></div>
   </div>
 
-  <div id="azCliNote" class="sub hidden">Uses the identity <code>az login</code> is signed in with — no app registration and no stored secret. You get your own Business Central permissions.</div>
+  <div id="azCliNote" class="sub hidden">Uses the identity <code>az login</code> is signed in with — no app registration and no stored secret. You get your own Business Central permissions. An identity reaches a tenant either because <code>az</code> holds an account there, or through delegated admin or a guest invite — and the latter works only while it is the identity signed in now.</div>
 
   <label for="environment">Environment <span class="hint">— e.g. Production, Sandbox-UAT</span></label>
   <input id="environment" placeholder="Production">
@@ -319,7 +332,6 @@ function renderFormHtml(init: FormInit, nonce: string): string {
     function renderAzAccounts() {
       const sel = el('azAccount');
       const current = sel.value || init.values.azAccount || '';
-      const tenant = el('tenantId').value.trim().toLowerCase();
       const add = (value, label) => {
         const o = document.createElement('option');
         o.value = value;
@@ -327,16 +339,11 @@ function renderFormHtml(init: FormInit, nonce: string): string {
         sel.appendChild(o);
       };
       sel.replaceChildren();
-      add('', 'Whichever account az is signed in as');
-      const seen = new Set();
-      const inTenant = (a) => a.tenantId.toLowerCase() === tenant;
-      for (const a of (azAccounts || []).slice().sort((a, b) =>
-        (inTenant(a) ? 0 : 1) - (inTenant(b) ? 0 : 1) || a.user.localeCompare(b.user)
+      add('', 'Whichever identity az is signed in as');
+      for (const a of (azAccounts || []).slice().sort(
+        (a, b) => (b.current ? 1 : 0) - (a.current ? 1 : 0) || a.user.localeCompare(b.user)
       )) {
-        const key = a.user + '|' + a.tenantId;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        add(a.user, a.user + (inTenant(a) ? ' \u2014 this tenant' : ' \u2014 tenant ' + a.tenantId));
+        add(a.user, a.user + (a.current ? ' \u2014 signed in now' : ''));
       }
       // Keep a saved identity selectable even if az no longer reports it.
       if (current && !Array.from(sel.options).some((o) => o.value === current)) {
@@ -346,7 +353,6 @@ function renderFormHtml(init: FormInit, nonce: string): string {
     }
 
     el('azReload').addEventListener('click', requestAzAccounts);
-    el('tenantId').addEventListener('input', renderAzAccounts);
 
     function applyAuthType() {
       el('appRegFields').classList.toggle('hidden', azureCli());
@@ -429,9 +435,9 @@ function renderFormHtml(init: FormInit, nonce: string): string {
         }
       }
       if (msg.type === 'azAccountsResult') {
-        azAccounts = msg.ok ? msg.accounts : [];
+        azAccounts = msg.ok ? msg.identities : [];
         el('azAccountStatus').textContent = msg.ok
-          ? (msg.accounts.length ? '' : 'az is not signed in to any account.')
+          ? (msg.identities.length ? '' : 'az is not signed in to any account.')
           : msg.message;
         renderAzAccounts();
       }

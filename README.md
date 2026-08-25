@@ -84,13 +84,18 @@ navapi profile add customer-x --tenant $CUSTOMER_TENANT --environment Production
 
 Pass `--az-account me@example.com` to skip the question, in scripts or when you already know. The VS Code profile form offers the same list as a dropdown.
 
-If `az` has no account for that identity in that tenant yet, sign it in once:
+An identity reaches a tenant in one of two ways, and they behave differently:
+
+- **`az` holds an account in that tenant.** navapi selects it directly, whichever identity you are signed in as at the time.
+- **Delegated admin (GDAP) or a guest invite.** No account exists in the tenant, and `az` can only do this as the identity it is *currently* signed in as. So a profile pinned to a different identity is refused rather than quietly authenticating as the wrong one.
+
+If neither applies yet, sign that identity in for the tenant once — which turns it into the first case:
 
 ```bash
 az login --tenant $CUSTOMER_TENANT --allow-no-subscriptions --scope https://api.businesscentral.dynamics.com/.default
 ```
 
-`--allow-no-subscriptions` matters — a tenant that only has Business Central usually has no Azure subscription, and `az login` fails without it.
+`--allow-no-subscriptions` matters — a tenant that only has Business Central usually has no Azure subscription, and `az login` fails without it. navapi puts this exact command in the error when it hits that case, so there is nothing to look up.
 
 **This authenticates as you.** An az-cli token is a *delegated* token: Business Central sees a user, not an application. That means:
 

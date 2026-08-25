@@ -217,6 +217,12 @@ const azAccounts = (accounts: Array<{ id: string; tenantId: string; user: string
   stdout: JSON.stringify(accounts.map((a) => ({ ...a, user: { name: a.user } }))),
 });
 
+const azActive = (user: string, tenantId: string, id = 'sub-active') => ({
+  stdout: JSON.stringify({ id, tenantId, user: { name: user } }),
+});
+
+const NOT_SIGNED_IN = azFails("Please run 'az login' to setup account.");
+
 const TWO_IDENTITIES = azAccounts([
   { id: 'sub-abc', tenantId: 'tenant-1', user: 'me@abc.com' },
   { id: 'sub-smc', tenantId: 'tenant-2', user: 'me@smc.com' },
@@ -263,19 +269,60 @@ describe('AzureCliAuth account selection', () => {
     expect(calls.filter((c) => c.args[1] === 'list')).toHaveLength(1);
   });
 
-  it('refuses an account that belongs to a different tenant', async () => {
-    const { exec } = mockAz([TWO_IDENTITIES]);
-    const auth = new AzureCliAuth({ tenantId: 'tenant-1', account: 'me@smc.com', exec });
+  it('uses --tenant when the pinned identity is the one az is signed in as', async () => {
+    // Delegated admin (GDAP) and guest access reach a tenant az holds no
+    // account in; only --tenant expresses that, and it uses the active identity.
+    const { exec, calls } = mockAz([
+      TWO_IDENTITIES,
+      azActive('me@abc.com', 'tenant-1'),
+      azJson('tok', 3600),
+    ]);
+    const auth = new AzureCliAuth({ tenantId: 'tenant-9', account: 'me@abc.com', exec });
 
-    // sub-smc is in tenant-2; using it would quietly return the wrong tenant's token.
-    await expect(auth.getToken()).rejects.toThrow(/no account for "me@smc.com" in tenant tenant-1/);
+    expect(await auth.getToken()).toBe('tok');
+    expect(calls[2].args).toContain('--tenant');
+    expect(calls[2].args).toContain('tenant-9');
+    expect(calls[2].args).not.toContain('--subscription');
   });
 
-  it('lists the accounts az does have when the pinned one is missing', async () => {
-    const { exec } = mockAz([TWO_IDENTITIES]);
+  it('resolves the identity once and reuses it on the --tenant path too', async () => {
+    const { exec, calls } = mockAz([
+      TWO_IDENTITIES,
+      azActive('me@abc.com', 'tenant-1'),
+      azJson('tok-short', 60),
+      azJson('tok-fresh', 3600),
+    ]);
+    const auth = new AzureCliAuth({ tenantId: 'tenant-9', account: 'me@abc.com', exec });
+
+    expect(await auth.getToken()).toBe('tok-short');
+    expect(await auth.getToken()).toBe('tok-fresh');
+    expect(calls.filter((c) => c.args[1] === 'list' || c.args[1] === 'show')).toHaveLength(2);
+  });
+
+  it('refuses to authenticate as a different identity than the one pinned', async () => {
+    // me@smc.com holds no account in tenant-1 and is not the active identity,
+    // so --tenant would quietly authenticate as me@abc.com instead.
+    const { exec } = mockAz([TWO_IDENTITIES, azActive('me@abc.com', 'tenant-1')]);
+    const auth = new AzureCliAuth({ tenantId: 'tenant-1', account: 'me@smc.com', exec });
+
+    await expect(auth.getToken()).rejects.toThrow(
+      /cannot authenticate as "me@smc\.com" for tenant tenant-1.*that is me@abc\.com/s,
+    );
+  });
+
+  it('lists the identities az does have when the pinned one is unknown', async () => {
+    const { exec } = mockAz([TWO_IDENTITIES, azActive('me@abc.com', 'tenant-1')]);
     const auth = new AzureCliAuth({ tenantId: 'tenant-1', account: 'nobody@example.com', exec });
 
-    await expect(auth.getToken()).rejects.toThrow(/me@abc\.com \(tenant tenant-1\)/);
-    await expect(auth.getToken()).rejects.toThrow(/az login --tenant tenant-1/);
+    await expect(auth.getToken()).rejects.toThrow(
+      /az login --tenant tenant-1.*az knows: me@abc\.com, me@smc\.com/s,
+    );
+  });
+
+  it('says az is signed out rather than blaming the pinned identity', async () => {
+    const { exec } = mockAz([azAccounts([]), NOT_SIGNED_IN]);
+    const auth = new AzureCliAuth({ tenantId: 'tenant-1', account: 'me@abc.com', exec });
+
+    await expect(auth.getToken()).rejects.toThrow(/az is not signed in to any account/);
   });
 });

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import {
-  type AzureCliAccount,
+  activeAzureCliAccount,
   listAzureCliAccounts,
   MetadataCache,
   NavApiError,
@@ -23,11 +23,36 @@ export function parseAuthType(value: string): AuthType {
   );
 }
 
-/** One entry per (identity, tenant), nearest tenant first. */
-function rankAccounts(accounts: AzureCliAccount[], tenantId: string): AzureCliAccount[] {
-  const inTenant = (a: AzureCliAccount) => a.tenantId.toLowerCase() === tenantId.toLowerCase();
-  return [...new Map(accounts.map((a) => [`${a.user}|${a.tenantId}`, a])).values()].sort(
-    (a, b) => Number(inTenant(b)) - Number(inTenant(a)) || a.user.localeCompare(b.user),
+interface AzIdentity {
+  user: string;
+  /** Tenants az holds an account in. An identity can reach others besides these. */
+  tenants: string[];
+  /** The account az is signed in as — the only one usable for a tenant it has no account in. */
+  current: boolean;
+}
+
+/**
+ * What `--az-account` selects is an identity, not one tenant's account: the
+ * same identity often reaches tenants az holds no account in, through
+ * delegated admin or a guest invite. So collapse az's accounts by username.
+ */
+async function azIdentities(): Promise<AzIdentity[]> {
+  const [accounts, active] = await Promise.all([listAzureCliAccounts(), activeAzureCliAccount()]);
+  const byUser = new Map<string, AzIdentity>();
+  const seed = (user: string): AzIdentity => {
+    const existing = byUser.get(user);
+    if (existing) return existing;
+    const created: AzIdentity = { user, tenants: [], current: false };
+    byUser.set(user, created);
+    return created;
+  };
+  for (const a of accounts) {
+    const entry = seed(a.user);
+    if (!entry.tenants.includes(a.tenantId)) entry.tenants.push(a.tenantId);
+  }
+  if (active) seed(active.user).current = true;
+  return [...byUser.values()].sort(
+    (a, b) => Number(b.current) - Number(a.current) || a.user.localeCompare(b.user),
   );
 }
 
@@ -37,28 +62,25 @@ function rankAccounts(accounts: AzureCliAccount[], tenantId: string): AzureCliAc
  * one identity needs no question, and az being absent isn't a reason to
  * fail `profile add`.
  */
-async function pickAzAccount(tenantId: string): Promise<string | undefined> {
+async function pickAzAccount(): Promise<string | undefined> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) return undefined;
-  let accounts: AzureCliAccount[];
+  let identities: AzIdentity[];
   try {
-    accounts = rankAccounts(await listAzureCliAccounts(), tenantId);
+    identities = await azIdentities();
   } catch {
     return undefined;
   }
-  if (accounts.length < 2) return undefined;
+  if (identities.length < 2) return undefined;
 
   console.log(pc.dim('az is signed in as more than one identity:'));
-  console.log(`${pc.bold(' 0')}) ${pc.dim('whichever account az is signed in as (default)')}`);
-  accounts.forEach((a, i) => {
-    const where =
-      a.tenantId.toLowerCase() === tenantId.toLowerCase()
-        ? '— this tenant'
-        : `— tenant ${a.tenantId}`;
-    console.log(`${pc.bold(String(i + 1).padStart(2))}) ${a.user} ${pc.dim(where)}`);
+  console.log(`${pc.bold(' 0')}) ${pc.dim('whichever identity az is signed in as (default)')}`);
+  identities.forEach((a, i) => {
+    const mark = a.current ? pc.dim('— signed in now') : '';
+    console.log(`${pc.bold(String(i + 1).padStart(2))}) ${a.user} ${mark}`);
   });
-  const answer = await ask(`Select identity [0-${accounts.length}]: `);
+  const answer = await ask(`Select identity [0-${identities.length}]: `);
   if (!answer || answer === '0') return undefined;
-  const picked = accounts[Number.parseInt(answer, 10) - 1];
+  const picked = identities[Number.parseInt(answer, 10) - 1];
   if (!picked) throw new NavApiError(`No identity at position "${answer}".`);
   return picked.user;
 }
@@ -97,8 +119,7 @@ export function registerProfile(program: Command): void {
         );
       }
 
-      const azAccount =
-        azureCli && !opts.azAccount ? await pickAzAccount(opts.tenant) : opts.azAccount;
+      const azAccount = azureCli && !opts.azAccount ? await pickAzAccount() : opts.azAccount;
 
       let secret: string | undefined;
       if (!azureCli) {
@@ -204,31 +225,30 @@ export function registerProfile(program: Command): void {
     .command('az-accounts')
     .description('List the identities az is signed in as, for --az-account')
     .option('--json', 'JSON output')
-    .action(async (opts, cmd) => {
-      const globals = cmd.optsWithGlobals();
-      const accounts = await listAzureCliAccounts();
+    .action(async (opts) => {
+      const identities = await azIdentities();
       if (wantJson(opts.json)) {
-        emitJson(accounts);
+        emitJson(identities);
         return;
       }
-      if (!accounts.length) {
+      if (!identities.length) {
         console.log(pc.dim('az is not signed in to any account. Run: az login'));
         return;
       }
-      // Rank against the named profile's tenant when there is one to compare to.
-      let tenantId = '';
-      try {
-        tenantId = (await profileStore().get(globals.profile)).tenantId;
-      } catch {
-        // no profile yet, or none named — plain alphabetical is fine
-      }
       printTable(
-        rankAccounts(accounts, tenantId).map((a) => ({
+        identities.map((a) => ({
+          '': a.current ? '●' : '',
           identity: a.user,
-          tenant: a.tenantId,
-          '': a.tenantId.toLowerCase() === tenantId.toLowerCase() ? '● this tenant' : '',
+          'tenants az has an account in': a.tenants.join(', '),
         })),
-        ['identity', 'tenant', ''],
+        ['', 'identity', 'tenants az has an account in'],
+      );
+      console.log(
+        pc.dim(
+          '● is the identity az is signed in as. An identity can also reach tenants it has\n' +
+            'no account in, through delegated admin or a guest invite — but only while it is\n' +
+            'the one signed in.',
+        ),
       );
     });
 
