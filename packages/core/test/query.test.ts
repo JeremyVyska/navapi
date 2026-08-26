@@ -50,8 +50,9 @@ describe('formatKey', () => {
     expect(formatKey({ Enabled: true })).toBe('Enabled=true');
   });
 
-  it('rejects empty and non-finite composite keys', () => {
+  it('rejects empty keys, empty field names, and non-finite values', () => {
     expect(() => formatKey({})).toThrow(/cannot be empty/);
+    expect(() => formatKey({ ' ': 'value' })).toThrow(/field names cannot be empty/);
     expect(() => formatKey({ Value: Number.NaN })).toThrow(/non-finite/);
   });
 });

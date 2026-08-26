@@ -46,12 +46,15 @@ function formatKeyValue(value: ODataKeyValue): string {
 }
 
 /**
- * Formats a scalar or named composite key for OData addressing. Scalar GUIDs
- * stay bare for BC API compatibility; strings are quoted and escaped.
+ * Formats a scalar or named composite key for OData addressing. GUID-shaped
+ * strings stay bare for BC compatibility; other strings are quoted and escaped.
  */
 export function formatKey(key: RecordKey): string {
   if (typeof key === 'string') return formatKeyValue(key);
   const entries = Object.entries(key);
   if (!entries.length) throw new TypeError('OData record key objects cannot be empty.');
+  if (entries.some(([name]) => !name.trim())) {
+    throw new TypeError('OData record key field names cannot be empty.');
+  }
   return entries.map(([name, value]) => `${name}=${formatKeyValue(value)}`).join(',');
 }

@@ -34,7 +34,10 @@ export async function resolveRecordKey(
     throw new NavApiError('--key must contain at least one OData key field.');
   }
   for (const [name, value] of entries) {
-    if (!name || !['string', 'number', 'boolean'].includes(typeof value)) {
+    if (!name.trim()) {
+      throw new NavApiError('--key field names cannot be empty.');
+    }
+    if (!['string', 'number', 'boolean'].includes(typeof value)) {
       throw new NavApiError('--key values must be strings, numbers, or booleans.');
     }
   }

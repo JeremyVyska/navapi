@@ -26,4 +26,10 @@ describe('resolveRecordKey', () => {
       '--key must contain at least one OData key field.',
     );
   });
+
+  it('rejects blank key field names', async () => {
+    await expect(resolveRecordKey(undefined, '{" ":"value"}')).rejects.toThrow(
+      '--key field names cannot be empty.',
+    );
+  });
 });

@@ -333,6 +333,23 @@ describe('navapi MCP server', () => {
     );
   });
 
+  it('rejects blank record key field names during tool validation', async () => {
+    const client = await connectedClient();
+    const result = await client.callTool({
+      name: 'update_record',
+      arguments: {
+        entitySet: 'customers',
+        id: { ' ': '10000' },
+        patch: { displayName: 'Adatum Renamed' },
+      },
+    });
+
+    expect(result.isError).toBe(true);
+    expect((result.content as { text: string }[])[0].text).toContain(
+      'Record key field names cannot be empty',
+    );
+  });
+
   it('invoke_batch passes requests through', async () => {
     const client = await connectedClient();
     const data = parseText(

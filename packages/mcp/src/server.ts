@@ -47,7 +47,11 @@ const recordKey = z.union([
   z.string(),
   z
     .record(z.union([z.string(), z.number(), z.boolean()]))
-    .refine((key) => Object.keys(key).length > 0, 'Record key objects cannot be empty'),
+    .refine((key) => Object.keys(key).length > 0, 'Record key objects cannot be empty')
+    .refine(
+      (key) => Object.keys(key).every((name) => name.trim().length > 0),
+      'Record key field names cannot be empty',
+    ),
 ]);
 
 function jsonResult(data: unknown) {
