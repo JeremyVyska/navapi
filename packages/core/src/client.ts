@@ -1,7 +1,7 @@
 import type { TokenProvider } from './auth.js';
 import type { BatchRequest, BatchResponse } from './batch.js';
 import { MetadataCache } from './cache.js';
-import { NavApiError, NotFoundError, PreconditionFailedError } from './errors.js';
+import { HttpError, NavApiError, NotFoundError, PreconditionFailedError } from './errors.js';
 import { BcHttp } from './http.js';
 import { parseMetadata } from './metadata.js';
 import { buildQueryString, formatKey, isGuid, type ODataQuery, type RecordKey } from './query.js';
@@ -122,10 +122,10 @@ export class BcClient {
   async listRoutes(): Promise<ApiRoute[]> {
     const routes = await this.listApiRoutes();
     try {
-      await this.listODataServices();
-      routes.push({ path: ODATA_V4_ROUTE, version: 'v4.0' });
-    } catch {
-      // ODataV4 isn't enabled or no published services are visible.
+      const services = await this.listODataServices();
+      if (services.size) routes.push({ path: ODATA_V4_ROUTE, version: 'v4.0' });
+    } catch (err) {
+      if (!(err instanceof HttpError) || ![403, 404].includes(err.status)) throw err;
     }
     return routes;
   }

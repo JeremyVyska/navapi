@@ -180,6 +180,12 @@ describe('filter DSL + encoders', () => {
 // -------------------------------------------------------------- detection
 
 describe('detectBraider', () => {
+  const ODATA_UNAVAILABLE: MockRoute = {
+    method: 'GET',
+    match: '/ODataV4/',
+    status: 404,
+    body: { error: { code: 'NotFound', message: 'ODataV4 unavailable' } },
+  };
   const ROUTES: MockRoute = {
     method: 'GET',
     match: '/apiRoutes',
@@ -205,6 +211,7 @@ describe('detectBraider', () => {
     const { client } = makeClient([
       COMPANIES_ROUTE,
       ROUTES,
+      ODATA_UNAVAILABLE,
       {
         method: 'GET',
         match: '/sparebrained/databraider/v2.0/$metadata',
@@ -224,6 +231,7 @@ describe('detectBraider', () => {
     const { client } = makeClient([
       COMPANIES_ROUTE,
       ROUTES,
+      ODATA_UNAVAILABLE,
       {
         method: 'GET',
         match: '/sparebrained/databraider/v2.0/$metadata',
@@ -245,6 +253,7 @@ describe('detectBraider', () => {
   it('returns undefined when Braider is not installed', async () => {
     const { client } = makeClient([
       COMPANIES_ROUTE,
+      ODATA_UNAVAILABLE,
       {
         method: 'GET',
         match: '/apiRoutes',

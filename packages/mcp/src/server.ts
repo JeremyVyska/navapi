@@ -36,9 +36,7 @@ const scopeArgs = {
   route: z
     .string()
     .optional()
-    .describe(
-      'Endpoint route, e.g. "v2.0" (default), "publisher/group/v1.0", or read-only "ODataV4"',
-    ),
+    .describe('Endpoint route, e.g. "v2.0" (default), "publisher/group/v1.0", or "ODataV4"'),
   company: z
     .string()
     .optional()

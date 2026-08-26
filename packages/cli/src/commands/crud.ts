@@ -68,7 +68,7 @@ export function registerCrud(program: Command): void {
     .option('--key <json|file|->', 'Named OData key object; supports composite keys')
     .option('--count', 'Request $count and report the total matching records')
     .option('--show-url', 'Print the request URL to stderr (copy/paste-able)')
-    .option('--route <route>', 'Endpoint route (default v2.0; navapi ODataV4 is read-only)')
+    .option('--route <route>', 'Endpoint route (default v2.0)')
     .option('--company <company>', 'Company override for this call')
     .option('--json', 'JSON output')
     .action(async (entitySet: string, id: string | undefined, opts, cmd) => {

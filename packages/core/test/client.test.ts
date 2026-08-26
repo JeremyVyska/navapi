@@ -16,6 +16,11 @@ const COMPANY_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const CUSTOMER_ID = '01121212-a0b0-e011-8fb2-78e7d1625bd8';
 const API = 'https://api.businesscentral.dynamics.com/v2.0/tenant-1/Sandbox/api';
 const ODATA = 'https://api.businesscentral.dynamics.com/v2.0/tenant-1/Sandbox/ODataV4';
+const ODATA_UNAVAILABLE: MockRoute = {
+  match: (url) => url === `${ODATA}/`,
+  status: 404,
+  body: { error: { code: 'NotFound', message: 'ODataV4 unavailable' } },
+};
 
 const COMPANIES_ROUTE: MockRoute = {
   method: 'GET',
@@ -76,6 +81,53 @@ describe('BcClient routes & discovery', () => {
     ]);
   });
 
+  it('omits ODataV4 when no published services are visible', async () => {
+    const { client } = makeClient([
+      COMPANIES_ROUTE,
+      {
+        match: `${API}/microsoft/runtime/beta/companies(${COMPANY_ID})/apiRoutes`,
+        body: { value: [{ route: 'v2.0' }] },
+      },
+      { match: (url) => url === `${ODATA}/`, body: { value: [] } },
+    ]);
+
+    expect((await client.listRoutes()).map((route) => route.path)).toEqual(['v2.0']);
+  });
+
+  it.each([403, 404])('omits ODataV4 when its service document returns HTTP %i', async (status) => {
+    const { client } = makeClient([
+      COMPANIES_ROUTE,
+      {
+        match: `${API}/microsoft/runtime/beta/companies(${COMPANY_ID})/apiRoutes`,
+        body: { value: [{ route: 'v2.0' }] },
+      },
+      {
+        match: (url) => url === `${ODATA}/`,
+        status,
+        body: { error: { code: 'Unavailable', message: 'ODataV4 unavailable' } },
+      },
+    ]);
+
+    expect((await client.listRoutes()).map((route) => route.path)).toEqual(['v2.0']);
+  });
+
+  it('surfaces unexpected ODataV4 discovery failures', async () => {
+    const { client } = makeClient([
+      COMPANIES_ROUTE,
+      {
+        match: `${API}/microsoft/runtime/beta/companies(${COMPANY_ID})/apiRoutes`,
+        body: { value: [{ route: 'v2.0' }] },
+      },
+      {
+        match: (url) => url === `${ODATA}/`,
+        status: 500,
+        body: { error: { code: 'InternalError', message: 'ODataV4 failed' } },
+      },
+    ]);
+
+    await expect(client.listRoutes()).rejects.toThrow('ODataV4 failed');
+  });
+
   it('combines the ODataV4 service document with its shared metadata', async () => {
     const { client } = makeClient([
       {
@@ -101,6 +153,7 @@ describe('BcClient routes & discovery', () => {
   it('prefers the runtime apiRoutes endpoint (company-scoped)', async () => {
     const { client, calls } = makeClient([
       COMPANIES_ROUTE,
+      ODATA_UNAVAILABLE,
       {
         match: `${API}/microsoft/runtime/beta/companies(${COMPANY_ID})/apiRoutes`,
         body: { value: [{ route: 'v2.0' }, { route: 'contoso/fieldops/v1.0' }] },
@@ -114,6 +167,7 @@ describe('BcClient routes & discovery', () => {
   it('tries runtime v1.0 when beta is missing', async () => {
     const { client } = makeClient([
       COMPANIES_ROUTE,
+      ODATA_UNAVAILABLE,
       {
         match: '/microsoft/runtime/beta/',
         status: 404,
@@ -131,6 +185,7 @@ describe('BcClient routes & discovery', () => {
   it('falls back to /api/routes when the runtime API is unavailable', async () => {
     const { client } = makeClient([
       COMPANIES_ROUTE,
+      ODATA_UNAVAILABLE,
       {
         match: '/apiRoutes',
         status: 404,
@@ -148,6 +203,7 @@ describe('BcClient routes & discovery', () => {
   it('falls back to the standard route when every source is missing', async () => {
     const { client } = makeClient([
       COMPANIES_ROUTE,
+      ODATA_UNAVAILABLE,
       { match: '/apiRoutes', status: 404, body: { error: { code: 'NotFound', message: 'x' } } },
       { match: `${API}/routes`, status: 404, body: { error: { code: 'NotFound', message: 'x' } } },
     ]);
@@ -157,6 +213,7 @@ describe('BcClient routes & discovery', () => {
 
   it('discovers all routes, caches metadata, and reports per-route failures', async () => {
     const { client, calls } = makeClient([
+      ODATA_UNAVAILABLE,
       {
         match: `${API}/routes`,
         body: { value: [{ route: 'v2.0' }, { route: 'broken/route/v1.0' }] },
