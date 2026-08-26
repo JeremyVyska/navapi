@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSetArgs } from '../src/commands/crud.js';
+import { parseSetArgs, resolveRecordKey } from '../src/commands/crud.js';
 
 describe('parseSetArgs', () => {
   it('parses strings, numbers, booleans, and JSON values', () => {
@@ -17,5 +17,13 @@ describe('parseSetArgs', () => {
   it('rejects malformed pairs', () => {
     expect(() => parseSetArgs(['nonsense'])).toThrow(/key=value/);
     expect(() => parseSetArgs(['=value'])).toThrow(/key=value/);
+  });
+});
+
+describe('resolveRecordKey', () => {
+  it('rejects empty key objects as a user-facing error', async () => {
+    await expect(resolveRecordKey(undefined, '{}')).rejects.toThrow(
+      '--key must contain at least one OData key field.',
+    );
   });
 });

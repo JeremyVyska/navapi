@@ -316,6 +316,23 @@ describe('navapi MCP server', () => {
     expect(patch?.headers['if-match']).toBe('W/"e1"');
   });
 
+  it('rejects empty record key objects during tool validation', async () => {
+    const client = await connectedClient();
+    const result = await client.callTool({
+      name: 'update_record',
+      arguments: {
+        entitySet: 'customers',
+        id: {},
+        patch: { displayName: 'Adatum Renamed' },
+      },
+    });
+
+    expect(result.isError).toBe(true);
+    expect((result.content as { text: string }[])[0].text).toContain(
+      'Record key objects cannot be empty',
+    );
+  });
+
   it('invoke_batch passes requests through', async () => {
     const client = await connectedClient();
     const data = parseText(

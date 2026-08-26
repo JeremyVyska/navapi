@@ -1,7 +1,7 @@
 import type { TokenProvider } from './auth.js';
 import type { BatchRequest, BatchResponse } from './batch.js';
 import { MetadataCache } from './cache.js';
-import { HttpError, NavApiError, NotFoundError, PreconditionFailedError } from './errors.js';
+import { NavApiError, NotFoundError, PreconditionFailedError } from './errors.js';
 import { BcHttp } from './http.js';
 import { parseMetadata } from './metadata.js';
 import { buildQueryString, formatKey, isGuid, type ODataQuery, type RecordKey } from './query.js';
@@ -17,6 +17,24 @@ import type {
 export const DEFAULT_BASE_URL = 'https://api.businesscentral.dynamics.com';
 export const STANDARD_ROUTE = 'v2.0';
 export const ODATA_V4_ROUTE = 'ODataV4';
+
+function isODataV4Route(route: string | undefined): boolean {
+  return route?.toLowerCase() === ODATA_V4_ROUTE.toLowerCase();
+}
+
+export function resolveEndpointRoots(profile: ProfileConfig): {
+  apiRoot: string;
+  odataRoot: string;
+} {
+  const base = (profile.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
+  const environmentRoot = `${base}/v2.0/${profile.tenantId}/${encodeURIComponent(
+    profile.environment,
+  )}`;
+  return {
+    apiRoot: `${environmentRoot}/api`,
+    odataRoot: `${environmentRoot}/${ODATA_V4_ROUTE}`,
+  };
+}
 
 export interface BcClientOptions {
   profile: ProfileConfig;
@@ -94,13 +112,7 @@ export class BcClient {
 
   constructor(options: BcClientOptions) {
     this.profile = options.profile;
-    const base = (options.profile.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
-    this.apiRoot = `${base}/v2.0/${options.profile.tenantId}/${encodeURIComponent(
-      options.profile.environment,
-    )}/api`;
-    this.odataRoot = `${base}/v2.0/${options.profile.tenantId}/${encodeURIComponent(
-      options.profile.environment,
-    )}/${ODATA_V4_ROUTE}`;
+    ({ apiRoot: this.apiRoot, odataRoot: this.odataRoot } = resolveEndpointRoots(options.profile));
     this.http = new BcHttp({
       auth: options.auth,
       fetch: options.fetch,
@@ -125,7 +137,7 @@ export class BcClient {
       const services = await this.listODataServices();
       if (services.size) routes.push({ path: ODATA_V4_ROUTE, version: 'v4.0' });
     } catch (err) {
-      if (!(err instanceof HttpError) || ![403, 404].includes(err.status)) throw err;
+      if (!(err instanceof NavApiError)) throw err;
     }
     return routes;
   }
@@ -187,11 +199,12 @@ export class BcClient {
     routePath: string,
     opts: { refresh?: boolean } = {},
   ): Promise<CachedRouteMetadata> {
+    if (isODataV4Route(routePath)) routePath = ODATA_V4_ROUTE;
     if (!opts.refresh) {
       const cached = await this.cache.get(this.profile.name, routePath);
       if (cached) return cached;
     }
-    if (routePath === ODATA_V4_ROUTE) {
+    if (isODataV4Route(routePath)) {
       const [services, response] = await Promise.all([
         this.listODataServices(),
         this.http.request('GET', `${this.odataRoot}/$metadata`, {
@@ -261,7 +274,7 @@ export class BcClient {
 
   private async collectionUrl(entitySet: string, opts: RecordOptions): Promise<string> {
     const route = opts.route ?? STANDARD_ROUTE;
-    if (route === ODATA_V4_ROUTE) {
+    if (isODataV4Route(route)) {
       if (entitySet === 'Company') return `${this.odataRoot}/Company`;
       const companyId = await this.resolveCompanyId(opts.company);
       return `${this.odataRoot}/Company(Id=${companyId})/${entitySet}`;
@@ -293,6 +306,10 @@ export class BcClient {
       try {
         ({ data } = await this.http.request('GET', url, { headers }));
       } catch (error) {
+        if (error instanceof Error) {
+          error.message = `${error.message} (GET ${url})`;
+          throw error;
+        }
         throw new NavApiError(`Failed to read ${url}`, { cause: error });
       }
       const page = data as {
@@ -477,7 +494,7 @@ export class BcClient {
   }
 
   private assertApiRouteOperation(route: string | undefined, operation: string): void {
-    if (route === ODATA_V4_ROUTE) {
+    if (isODataV4Route(route)) {
       throw new NavApiError(`${operation} isn't supported for ODataV4 published web services.`);
     }
   }

@@ -19,14 +19,21 @@ function csv(value?: string): string[] | undefined {
     : undefined;
 }
 
-async function resolveRecordKey(id?: string, keySource?: string): Promise<RecordKey | undefined> {
+export async function resolveRecordKey(
+  id?: string,
+  keySource?: string,
+): Promise<RecordKey | undefined> {
   if (id && keySource) throw new NavApiError('Pass either a positional id or --key, not both.');
   if (!keySource) return id;
   const key = await readBody(keySource);
   if (typeof key !== 'object' || key === null || Array.isArray(key)) {
     throw new NavApiError('--key must be a JSON object of OData key fields.');
   }
-  for (const [name, value] of Object.entries(key)) {
+  const entries = Object.entries(key);
+  if (!entries.length) {
+    throw new NavApiError('--key must contain at least one OData key field.');
+  }
+  for (const [name, value] of entries) {
     if (!name || !['string', 'number', 'boolean'].includes(typeof value)) {
       throw new NavApiError('--key values must be strings, numbers, or booleans.');
     }

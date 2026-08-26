@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   BcClient,
   MetadataCache,
+  NotFoundError,
   ODATA_V4_ROUTE,
   PreconditionFailedError,
   StaticTokenProvider,
@@ -94,7 +95,9 @@ describe('BcClient routes & discovery', () => {
     expect((await client.listRoutes()).map((route) => route.path)).toEqual(['v2.0']);
   });
 
-  it.each([403, 404])('omits ODataV4 when its service document returns HTTP %i', async (status) => {
+  it.each([
+    401, 403, 404, 500,
+  ])('keeps API routes when the optional ODataV4 probe returns HTTP %i', async (status) => {
     const { client } = makeClient([
       COMPANIES_ROUTE,
       {
@@ -111,21 +114,29 @@ describe('BcClient routes & discovery', () => {
     expect((await client.listRoutes()).map((route) => route.path)).toEqual(['v2.0']);
   });
 
-  it('surfaces unexpected ODataV4 discovery failures', async () => {
+  it('keeps API routes when the optional ODataV4 probe has a transport failure', async () => {
     const { client } = makeClient([
       COMPANIES_ROUTE,
       {
         match: `${API}/microsoft/runtime/beta/companies(${COMPANY_ID})/apiRoutes`,
         body: { value: [{ route: 'v2.0' }] },
       },
-      {
-        match: (url) => url === `${ODATA}/`,
-        status: 500,
-        body: { error: { code: 'InternalError', message: 'ODataV4 failed' } },
-      },
     ]);
 
-    await expect(client.listRoutes()).rejects.toThrow('ODataV4 failed');
+    expect((await client.listRoutes()).map((route) => route.path)).toEqual(['v2.0']);
+  });
+
+  it('keeps API routes when the ODataV4 service document is invalid', async () => {
+    const { client } = makeClient([
+      COMPANIES_ROUTE,
+      {
+        match: `${API}/microsoft/runtime/beta/companies(${COMPANY_ID})/apiRoutes`,
+        body: { value: [{ route: 'v2.0' }] },
+      },
+      { match: (url) => url === `${ODATA}/`, body: '<html>not OData</html>' },
+    ]);
+
+    expect((await client.listRoutes()).map((route) => route.path)).toEqual(['v2.0']);
   });
 
   it('combines the ODataV4 service document with its shared metadata', async () => {
@@ -142,7 +153,7 @@ describe('BcClient routes & discovery', () => {
       { match: `${ODATA}/$metadata`, body: SAMPLE_EDMX },
     ]);
 
-    const cached = await client.getMetadata(ODATA_V4_ROUTE);
+    const cached = await client.getMetadata('odatav4');
     expect(cached.routePath).toBe(ODATA_V4_ROUTE);
     expect(cached.metadata.entitySets.map((entitySet) => entitySet.name)).toEqual([
       'customers',
@@ -310,7 +321,7 @@ describe('BcClient list pagination', () => {
     );
 
     const result = await client.list('Customer', {
-      route: ODATA_V4_ROUTE,
+      route: 'odatav4',
       query: { select: ['No', 'Name'], filter: "Blocked eq ' '", top: 10 },
       maxPageSize: 25,
     });
@@ -349,9 +360,24 @@ describe('BcClient list pagination', () => {
       COMPANY_ID,
     );
 
+    const error = await client
+      .list('MissingService', { route: ODATA_V4_ROUTE, query: { top: 1 } })
+      .catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(NotFoundError);
+    expect(error.message).toContain('missing service (HTTP 404)');
+    expect(error.message).toContain(`${ODATA}/Company(Id=${COMPANY_ID})/MissingService?$top=1`);
+  });
+
+  it('rejects API-only operations for case-insensitive ODataV4 route names', async () => {
+    const { client } = makeClient([]);
+
     await expect(
-      client.list('MissingService', { route: ODATA_V4_ROUTE, query: { top: 1 } }),
-    ).rejects.toThrow(`${ODATA}/Company(Id=${COMPANY_ID})/MissingService?$top=1`);
+      client.callAction('Customer', '10000', 'Post', { route: 'odatav4' }),
+    ).rejects.toThrow("Bound actions isn't supported for ODataV4");
+    await expect(client.batch([], { route: 'ODATAV4' })).rejects.toThrow(
+      "JSON batch isn't supported for ODataV4",
+    );
   });
 
   it('returns first page plus nextLink by default', async () => {

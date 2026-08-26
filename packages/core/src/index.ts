@@ -48,6 +48,7 @@ export {
   type ListResult,
   ODATA_V4_ROUTE,
   type RecordOptions,
+  resolveEndpointRoots,
   STANDARD_ROUTE,
 } from './client.js';
 export {

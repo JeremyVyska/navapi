@@ -43,7 +43,12 @@ const scopeArgs = {
     .describe('Company name, displayName, or GUID; omit to use the profile default'),
 };
 
-const recordKey = z.union([z.string(), z.record(z.union([z.string(), z.number(), z.boolean()]))]);
+const recordKey = z.union([
+  z.string(),
+  z
+    .record(z.union([z.string(), z.number(), z.boolean()]))
+    .refine((key) => Object.keys(key).length > 0, 'Record key objects cannot be empty'),
+]);
 
 function jsonResult(data: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
