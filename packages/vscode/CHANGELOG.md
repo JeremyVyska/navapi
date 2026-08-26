@@ -3,6 +3,16 @@
 All notable changes to the **navapi** extension are documented here. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- **Search Endpoints.** A magnifier in the Endpoint Browser toolbar (and the
+  `navapi: Search Endpoints…` command) searches every cached entity set by
+  name, route, and entity type, then opens the records grid for the one you
+  pick. The search runs against the on-disk cache; opening the grid fetches
+  the first page, the same as clicking the entity set in the tree.
+
 ## 0.2.1
 
 - Marketplace listing: reorganized so the core functionality leads, with the

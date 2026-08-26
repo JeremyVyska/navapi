@@ -9,7 +9,7 @@ Model Context Protocol server for Microsoft Dynamics 365 Business Central. Agent
 | `list_profiles` | Configured profiles (one per BC environment) |
 | `set_default_company` | Switch the profile's default company (validated against the environment) |
 | `list_routes` | Every API route the environment exposes |
-| `list_entities` | Collection tree per route, from cached `$metadata` (auto-discovers) |
+| `list_entities` | Collection tree per route, from cached `$metadata` (auto-discovers); `search` narrows it by entity set name or type |
 | `get_entity_schema` | Properties, keys, navigation properties, bound actions |
 | `get_records` / `get_record` | OData queries with filter/select/top/…; returns `count` (opt-in), `nextLink`, and the exact `queryUrl` |
 | `get_next_page` | Continue a paged `get_records` result from its `nextLink` |

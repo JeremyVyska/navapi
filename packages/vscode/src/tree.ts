@@ -72,7 +72,7 @@ function store(): ProfileStore {
   return new ProfileStore(defaultConfigDir());
 }
 
-function metadataCache(): MetadataCache {
+export function metadataCache(): MetadataCache {
   return new MetadataCache(path.join(defaultConfigDir(), 'cache'));
 }
 

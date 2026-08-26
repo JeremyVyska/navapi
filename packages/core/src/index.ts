@@ -74,6 +74,7 @@ export {
 } from './profiles.js';
 export { buildQueryString, formatKey, isGuid, type ODataQuery } from './query.js';
 export { parseRoutesResponse } from './routes.js';
+export { type EntitySetMatch, searchEntitySets } from './search.js';
 export type {
   ApiRoute,
   BcRecord,

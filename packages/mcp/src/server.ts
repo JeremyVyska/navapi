@@ -15,6 +15,7 @@ import {
   detectBraider,
   findCompany,
   ProfileStore,
+  searchEntitySets,
 } from '@navapi/core';
 import { z } from 'zod';
 
@@ -174,29 +175,36 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
     'list_entities',
     {
       description:
-        'The collection tree: entity sets available per API route, from cached $metadata (auto-discovers on first use). Set refresh=true after publishing new APIs.',
+        'The collection tree: entity sets available per API route, from cached $metadata (auto-discovers on first use). An environment can expose hundreds of entity sets, so pass search to narrow it. Set refresh=true after publishing new APIs.',
       inputSchema: {
         ...profileArg,
         route: z.string().optional().describe('Limit to one route path'),
+        search: z
+          .string()
+          .optional()
+          .describe(
+            'Case-insensitive substring matched against the entity set name and entity type, e.g. "customer". Routes with no match are left out.',
+          ),
         refresh: z.boolean().optional().describe('Refetch $metadata from the environment'),
       },
     },
-    safe(async ({ profile, route, refresh }) => {
+    safe(async ({ profile, route, search, refresh }) => {
       const client = await getClient(profile);
       const { cached, errors } = await ensureMetadata(client, refresh);
       const scoped = route ? cached.filter((c) => c.routePath === route) : cached;
-      return {
-        routes: scoped.map((c) => ({
+      const routes = scoped
+        .map((c) => ({
           route: c.routePath,
           fetchedAt: c.fetchedAt,
-          entitySets: c.metadata.entitySets.map((s) => ({
+          entitySets: searchEntitySets([c], search).map(({ entitySet: s }) => ({
             name: s.name,
+            entityType: s.entityType,
             keys: s.keys,
             actions: s.actions,
           })),
-        })),
-        errors,
-      };
+        }))
+        .filter((r) => !search || r.entitySets.length);
+      return { routes, errors };
     }),
   );
 

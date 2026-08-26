@@ -98,6 +98,12 @@
         "icon": "$(sync)"
       },
       {
+        "command": "navapi.searchEndpoints",
+        "title": "Search Endpoints…",
+        "category": "navapi",
+        "icon": "$(search)"
+      },
+      {
         "command": "navapi.setDefaultProfile",
         "title": "Set as Active Profile",
         "category": "navapi"
@@ -186,9 +192,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "navapi.discover",
+          "command": "navapi.searchEndpoints",
           "when": "view == navapi.endpoints",
           "group": "navigation@1"
+        },
+        {
+          "command": "navapi.discover",
+          "when": "view == navapi.endpoints",
+          "group": "navigation@2"
         },
         {
           "command": "navapi.braider.newEndpoint",
