@@ -1,7 +1,7 @@
 import { FileSecretStore, KeychainSecretStore, loadKeyringFactory } from '@navapi/core';
 import type { Command } from 'commander';
 import pc from 'picocolors';
-import { configDir, profileStore } from '../context.js';
+import { configDir, profileStore, secretStore } from '../context.js';
 import { emitJson, printTable, wantJson } from '../output.js';
 
 interface SecretLocation {
@@ -65,6 +65,19 @@ export function registerSecrets(program: Command): void {
       if (rows.some((r) => r.file) && keychainAvailable) {
         console.log(pc.dim('Run "navapi secrets migrate" to move file secrets into the keychain.'));
       }
+    });
+
+  secrets
+    .command('forget <profile>')
+    .description('Delete a stored secret without removing the profile')
+    .action(async (name: string) => {
+      const { store } = await secretStore();
+      if ((await store.get(name)) === undefined) {
+        console.log(pc.dim(`No secret stored for ${name}.`));
+        return;
+      }
+      await store.delete(name);
+      console.log(`${pc.green('✔')} Removed the stored secret for ${pc.bold(name)}`);
     });
 
   secrets

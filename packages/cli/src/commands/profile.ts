@@ -11,19 +11,23 @@ import { configDir, createClient, profileStore, secretStore } from '../context.j
 import { emitJson, printTable, wantJson } from '../output.js';
 import { ask, promptSecret } from '../prompt.js';
 
-type AuthType = 'clientCredentials' | 'azureCli';
+type AuthType = 'clientSecret' | 'azureCli';
 
-/** Accepts the spellings people actually type: azureCli, azure-cli, az-cli. */
+/**
+ * Accepts the spellings people actually type. `clientSecret` rather than
+ * `clientCredentials` because a certificate uses the client-credentials grant
+ * too — the distinction that matters here is which credential, not which
+ * grant. `clientCredentials` stays accepted as an alias.
+ */
 export function parseAuthType(value: string): AuthType {
   const key = value.toLowerCase().replace(/[^a-z]/g, '');
   if (key === 'azurecli' || key === 'azcli' || key === 'az') return 'azureCli';
-  if (key === 'clientcredentials' || key === 'clientcredential') return 'clientCredentials';
-  throw new NavApiError(
-    `Unknown --auth value "${value}". Use clientCredentials (default) or azureCli.`,
-  );
+  if (key === 'clientsecret' || key === 'secret') return 'clientSecret';
+  if (key === 'clientcredentials' || key === 'clientcredential') return 'clientSecret';
+  throw new NavApiError(`Unknown --auth value "${value}". Use clientSecret (default) or azureCli.`);
 }
 
-interface AzIdentity {
+export interface AzIdentity {
   user: string;
   /** Tenants az holds an account in. An identity can reach others besides these. */
   tenants: string[];
@@ -57,23 +61,43 @@ async function azIdentities(): Promise<AzIdentity[]> {
 }
 
 /**
- * Offers the az identities to choose from, since nobody remembers which
- * accounts they have connected. Only asks when the answer isn't obvious:
- * one identity needs no question, and az being absent isn't a reason to
- * fail `profile add`.
+ * Resolves which az identity the profile should pin.
+ *
+ * Pinning is the default even when there is only one identity: leaving it
+ * unpinned means a later `az login` as somebody else silently changes who the
+ * profile authenticates as, which is the thing the resolution code goes out of
+ * its way to prevent once an identity *is* pinned. One identity needs no
+ * question, so it is pinned without asking; more than one is a real choice.
+ * Option 0 stays available for deliberately following whichever identity az is
+ * signed in as.
+ *
+ * az being absent or signed out is not a reason to fail `profile add` — the
+ * profile is simply saved unpinned.
  */
+export function resolveIdentityChoice(
+  identities: AzIdentity[],
+  canPrompt: boolean,
+): { pin?: string; prompt: boolean } {
+  if (!identities.length) return { prompt: false };
+  if (identities.length === 1) return { pin: identities[0].user, prompt: false };
+  return { prompt: canPrompt };
+}
+
 async function pickAzAccount(): Promise<string | undefined> {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) return undefined;
   let identities: AzIdentity[];
   try {
     identities = await azIdentities();
   } catch {
     return undefined;
   }
-  if (identities.length < 2) return undefined;
+  const canPrompt = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  const choice = resolveIdentityChoice(identities, canPrompt);
+  if (!choice.prompt) return choice.pin;
 
   console.log(pc.dim('az is signed in as more than one identity:'));
-  console.log(`${pc.bold(' 0')}) ${pc.dim('whichever identity az is signed in as (default)')}`);
+  console.log(
+    `${pc.bold(' 0')}) ${pc.dim('do not pin — follow whichever identity az is signed in as')}`,
+  );
   identities.forEach((a, i) => {
     const mark = a.current ? pc.dim('— signed in now') : '';
     console.log(`${pc.bold(String(i + 1).padStart(2))}) ${a.user} ${mark}`);
@@ -96,7 +120,7 @@ export function registerProfile(program: Command): void {
     .description('Add or update a profile pinned to a BC environment')
     .requiredOption('--tenant <tenantId>', 'Entra ID tenant ID or domain')
     .requiredOption('--environment <environment>', 'BC environment name (e.g. Production)')
-    .option('--auth <type>', 'Auth strategy: clientCredentials (default) or azureCli')
+    .option('--auth <type>', 'Auth strategy: clientSecret (default) or azureCli')
     .option('--client-id <clientId>', 'App registration client ID (client-credentials auth)')
     .option(
       '--az-account <userOrId>',
@@ -107,7 +131,7 @@ export function registerProfile(program: Command): void {
     .option('--base-url <url>', 'Override the BC API host')
     .option('--default', 'Make this the default profile')
     .action(async (name: string, opts) => {
-      const authType = opts.auth ? parseAuthType(opts.auth) : 'clientCredentials';
+      const authType = opts.auth ? parseAuthType(opts.auth) : 'clientSecret';
       const azureCli = authType === 'azureCli';
 
       // Commander can't make --client-id conditionally required, so it's an
@@ -135,6 +159,12 @@ export function registerProfile(program: Command): void {
         if (!secret) throw new NavApiError('Empty secret; profile not saved.');
       }
 
+      // Whether this replaces a secret-backed profile decides if there is a
+      // now-unused secret to clear out below.
+      const replaced = await profileStore()
+        .get(name)
+        .catch(() => undefined);
+
       await profileStore().upsert(
         {
           name,
@@ -148,6 +178,7 @@ export function registerProfile(program: Command): void {
         },
         { makeDefault: Boolean(opts.default) },
       );
+
       let how: string;
       if (secret) {
         const { store, backend } = await secretStore();
@@ -157,6 +188,16 @@ export function registerProfile(program: Command): void {
         how = azAccount
           ? `auth: Azure CLI as ${azAccount} — no secret stored`
           : 'auth: Azure CLI — no secret stored';
+        // Switching away from a secret leaves one behind that nothing uses.
+        // Say so rather than reporting "no secret stored" while one sits in
+        // the keychain — but don't delete it: an Entra client secret is shown
+        // once at creation, so a mistaken switch would be unrecoverable.
+        if (replaced?.auth.type === 'clientSecret') {
+          const { store } = await secretStore();
+          if ((await store.get(name)) !== undefined) {
+            how += `; the previous client secret is kept — remove it with: navapi secrets forget ${name}`;
+          }
+        }
       }
       console.log(
         `${pc.green('✔')} Profile ${pc.bold(name)} saved ` +

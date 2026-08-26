@@ -18,7 +18,7 @@ import { getNonce } from './webview.js';
 export interface ProfileFormValues {
   name: string;
   tenantId: string;
-  authType: 'clientCredentials' | 'azureCli';
+  authType: 'clientSecret' | 'azureCli';
   clientId: string;
   clientSecret: string;
   azAccount: string;
@@ -102,7 +102,7 @@ export class ProfileFormPanel {
       values: {
         name: existing?.name ?? '',
         tenantId: existing?.tenantId ?? '',
-        authType: existing?.auth.type === 'azureCli' ? 'azureCli' : 'clientCredentials',
+        authType: existing?.auth.type === 'azureCli' ? 'azureCli' : 'clientSecret',
         clientId: existing?.auth.type === 'clientSecret' ? existing.auth.clientId : '',
         clientSecret: '',
         azAccount: existing?.auth.type === 'azureCli' ? (existing.auth.account ?? '') : '',
@@ -265,7 +265,7 @@ function renderFormHtml(init: FormInit, nonce: string): string {
 
   <label for="authType">Authentication</label>
   <select id="authType">
-    <option value="clientCredentials">App registration (client ID + secret)</option>
+    <option value="clientSecret">App registration (client ID + secret)</option>
     <option value="azureCli">Azure CLI — sign in as myself with az login</option>
   </select>
 
