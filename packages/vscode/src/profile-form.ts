@@ -113,7 +113,8 @@ export class ProfileFormPanel {
     try {
       const [accounts, active] = await Promise.all([
         listAzureCliAccounts(),
-        activeAzureCliAccount(),
+        // Same as the CLI: a broken active account costs the marker, not the list.
+        activeAzureCliAccount().catch(() => undefined),
       ]);
       // Collapse to identities: the same one often reaches tenants az holds no
       // account in, so listing it per tenant suggests a binding that isn't real.

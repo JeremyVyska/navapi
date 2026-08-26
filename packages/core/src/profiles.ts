@@ -20,9 +20,10 @@ interface StoredProfilesFile {
  * carried `clientId` at the top level and meant client-credentials; that is
  * the only other shape ever released, so it is the only one migrated.
  *
- * Migration happens in memory on read. The file is only rewritten when
- * something actually changes it, so merely running a command doesn't move a
- * profile to a format older versions can't read.
+ * Migration happens in memory on read, and `serializeProfile` writes the
+ * legacy field back out alongside the new one — so no navapi version is ever
+ * left with a profile it can't read. That matters because any write rewrites
+ * the whole file, not just the profile being changed.
  */
 function normalizeProfile(stored: StoredProfile): ProfileConfig {
   const { clientId, auth, ...rest } = stored;
@@ -34,6 +35,18 @@ function inferAuth(clientId?: string): ProfileAuth {
   // guess, record it as client-credentials with an empty client ID so the
   // factory can raise the error that names the profile and the fix.
   return { type: 'clientSecret', clientId: clientId ?? '' };
+}
+
+/**
+ * Writes the `auth` union and, for client-secret profiles, the pre-`auth`
+ * top-level `clientId` as well. Saving any profile rewrites every profile in
+ * the file, so without the legacy field a single `profile add` would move
+ * untouched profiles to a shape an older navapi reads as `clientId:
+ * undefined` — which fails against Entra with an opaque `invalid_client`.
+ */
+function serializeProfile(profile: ProfileConfig): StoredProfile {
+  if (profile.auth.type !== 'clientSecret') return profile;
+  return { ...profile, clientId: profile.auth.clientId };
 }
 
 /** Named profiles stored in `<configDir>/profiles.json` (no secrets in here). */
@@ -61,8 +74,14 @@ export class ProfileStore {
   }
 
   private async save(data: ProfilesFile): Promise<void> {
+    const stored: StoredProfilesFile = {
+      profiles: Object.fromEntries(
+        Object.entries(data.profiles).map(([name, p]) => [name, serializeProfile(p)]),
+      ),
+      defaultProfile: data.defaultProfile,
+    };
     await mkdir(this.dir, { recursive: true });
-    await writeFile(this.file, JSON.stringify(data, null, 2), 'utf8');
+    await writeFile(this.file, JSON.stringify(stored, null, 2), 'utf8');
   }
 
   async upsert(profile: ProfileConfig, opts: { makeDefault?: boolean } = {}): Promise<void> {

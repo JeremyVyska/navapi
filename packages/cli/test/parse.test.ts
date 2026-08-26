@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseSetArgs } from '../src/commands/crud.js';
-import { parseAuthType, resolveIdentityChoice } from '../src/commands/profile.js';
+import { parseAuthType, resolveIdentityChoice, strayAuthFlags } from '../src/commands/profile.js';
 
 describe('parseSetArgs', () => {
   it('parses strings, numbers, booleans, and JSON values', () => {
@@ -67,5 +67,24 @@ describe('resolveIdentityChoice', () => {
 
   it('does not pin when az reports nothing', () => {
     expect(resolveIdentityChoice([], true)).toEqual({ prompt: false });
+  });
+});
+
+describe('strayAuthFlags', () => {
+  it('flags app-registration options passed to az CLI auth', () => {
+    expect(strayAuthFlags('azureCli', { clientId: 'c', secret: 's' })).toEqual([
+      '--client-id',
+      '--secret',
+    ]);
+  });
+
+  it('flags an az identity passed to client-secret auth', () => {
+    expect(strayAuthFlags('clientSecret', { azAccount: 'me@x.com' })).toEqual(['--az-account']);
+  });
+
+  it('passes the combinations that belong together', () => {
+    expect(strayAuthFlags('clientSecret', { clientId: 'c', secret: 's' })).toBeUndefined();
+    expect(strayAuthFlags('azureCli', { azAccount: 'me@x.com' })).toBeUndefined();
+    expect(strayAuthFlags('azureCli', {})).toBeUndefined();
   });
 });

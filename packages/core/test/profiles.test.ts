@@ -102,6 +102,36 @@ describe('ProfileStore', () => {
     expect(await readFile(file, 'utf8')).toBe(original);
   });
 
+  it('keeps an untouched profile readable by a navapi that predates `auth`', async () => {
+    // Any write rewrites the whole file, so adding one profile must not strand
+    // the others in a shape an older navapi reads as clientId: undefined.
+    await mkdir(tmpDir, { recursive: true });
+    const file = path.join(tmpDir, 'profiles.json');
+    await writeFile(
+      file,
+      JSON.stringify({
+        profiles: {
+          legacy: { name: 'legacy', tenantId: 't', clientId: 'old-client', environment: 'P' },
+        },
+      }),
+      'utf8',
+    );
+
+    const store = new ProfileStore(tmpDir);
+    await store.upsert({
+      name: 'other',
+      tenantId: 't2',
+      auth: { type: 'azureCli' },
+      environment: 'Sandbox',
+    });
+
+    const written = JSON.parse(await readFile(file, 'utf8'));
+    expect(written.profiles.legacy.clientId).toBe('old-client');
+    expect(written.profiles.legacy.auth).toEqual({ type: 'clientSecret', clientId: 'old-client' });
+    // az-cli profiles have no client ID to write back.
+    expect(written.profiles.other.clientId).toBeUndefined();
+  });
+
   it('gives a friendly error when nothing is configured', async () => {
     const store = new ProfileStore(tmpDir);
     await expect(store.get()).rejects.toThrow(/navapi profile add/);

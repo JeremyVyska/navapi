@@ -114,6 +114,15 @@ describe('profile form — az identity dropdown', () => {
     expect(select().value).toBe('pinned@example.com');
   });
 
+  it('keeps "do not pin" through a reload when editing a pinned profile', () => {
+    mountForm({ mode: 'edit', azAccount: 'pinned@example.com' });
+    deliverIdentities({ user: 'pinned@example.com', current: true });
+    select().value = '';
+    select().dispatchEvent(new Event('change'));
+    deliverIdentities({ user: 'pinned@example.com', current: true }); // Reload
+    expect(select().value).toBe('');
+  });
+
   it('does not re-pin after the user has chosen to follow az', () => {
     mountForm();
     deliverIdentities({ user: 'a@x.com' }, { user: 'b@y.com' });

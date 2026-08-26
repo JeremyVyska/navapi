@@ -70,15 +70,17 @@ navapi profile add contoso-dev \
 
 The profile then works exactly like any other, in the CLI, the VS Code extension, and the MCP server. Client-credentials auth stays the default, and existing profiles are untouched.
 
-Reaching a customer's tenant works as long as one of the identities `az` holds has access to it — through delegated admin (GDAP), a guest invite, or an account in that tenant. If `az` holds more than one identity, say which one a profile should use, because `az` otherwise picks the one it is currently signed in as. On a terminal, `profile add` just asks:
+Reaching a customer's tenant works as long as one of the identities `az` holds has access to it — through delegated admin (GDAP), a guest invite, or an account in that tenant.
+
+A profile records which identity it was created with, so a later `az login` as somebody else can't change who it authenticates as. With one identity that happens without asking; with several, `profile add` asks on a terminal:
 
 ```bash
 navapi profile az-accounts     # the identities az is signed in as
 navapi profile add customer-x --tenant $CUSTOMER_TENANT --environment Production --auth azureCli
 #   az is signed in as more than one identity:
-#    0) whichever account az is signed in as (default)
-#    1) me@example.com — this tenant
-#    2) me@other.com — tenant 00000000-…
+#    0) do not pin — follow whichever identity az is signed in as
+#    1) me@example.com — signed in now
+#    2) me@other.com
 #   Select identity [0-2]:
 ```
 

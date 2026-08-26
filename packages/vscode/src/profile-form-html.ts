@@ -132,6 +132,10 @@ export function renderFormHtml(init: FormInit, nonce: string): string {
     // carries its own (a blank one is a deliberate "follow az"), and once the
     // user touches the dropdown it is theirs.
     let azPinned = init.mode === 'edit' || Boolean(init.values.azAccount);
+    // Whether the user has picked from the dropdown themselves. Without this,
+    // an empty selection is indistinguishable from "not populated yet", so a
+    // Reload after choosing "do not pin" would restore the saved identity.
+    let azTouched = false;
 
     function requestAzAccounts() {
       el('azAccountStatus').textContent = 'Reading az accounts\u2026';
@@ -140,7 +144,7 @@ export function renderFormHtml(init: FormInit, nonce: string): string {
 
     function renderAzAccounts() {
       const sel = el('azAccount');
-      const current = sel.value || init.values.azAccount || '';
+      const current = azTouched ? sel.value : sel.value || init.values.azAccount || '';
       const add = (value, label) => {
         const o = document.createElement('option');
         o.value = value;
@@ -169,7 +173,7 @@ export function renderFormHtml(init: FormInit, nonce: string): string {
       sel.value = current;
     }
 
-    el('azAccount').addEventListener('change', () => { azPinned = true; });
+    el('azAccount').addEventListener('change', () => { azPinned = true; azTouched = true; });
     el('azReload').addEventListener('click', requestAzAccounts);
 
     function applyAuthType() {

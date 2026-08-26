@@ -285,18 +285,37 @@ describe('AzureCliAuth account selection', () => {
     expect(calls[2].args).not.toContain('--subscription');
   });
 
-  it('resolves the identity once and reuses it on the --tenant path too', async () => {
+  it('re-checks the active identity on every --tenant refresh', async () => {
+    // --tenant means "whichever identity az is active as", so the answer can
+    // stop being true between token requests. Caching it would let a later
+    // `az login` silently change who a pinned profile authenticates as.
     const { exec, calls } = mockAz([
       TWO_IDENTITIES,
       azActive('me@abc.com', 'tenant-1'),
-      azJson('tok-short', 60),
+      azJson('tok-short', 60), // stale on arrival, forcing a second token request
+      TWO_IDENTITIES,
+      azActive('me@abc.com', 'tenant-1'),
       azJson('tok-fresh', 3600),
     ]);
     const auth = new AzureCliAuth({ tenantId: 'tenant-9', account: 'me@abc.com', exec });
 
     expect(await auth.getToken()).toBe('tok-short');
     expect(await auth.getToken()).toBe('tok-fresh');
-    expect(calls.filter((c) => c.args[1] === 'list' || c.args[1] === 'show')).toHaveLength(2);
+    expect(calls.filter((c) => c.args[1] === 'show')).toHaveLength(2);
+  });
+
+  it('refuses the refresh once az is signed in as somebody else', async () => {
+    const { exec } = mockAz([
+      TWO_IDENTITIES,
+      azActive('me@abc.com', 'tenant-1'),
+      azJson('tok-short', 60),
+      TWO_IDENTITIES,
+      azActive('me@smc.com', 'tenant-2'), // az login as another identity
+    ]);
+    const auth = new AzureCliAuth({ tenantId: 'tenant-9', account: 'me@abc.com', exec });
+
+    expect(await auth.getToken()).toBe('tok-short');
+    await expect(auth.getToken()).rejects.toThrow(/cannot authenticate as "me@abc\.com"/);
   });
 
   it('refuses to authenticate as a different identity than the one pinned', async () => {

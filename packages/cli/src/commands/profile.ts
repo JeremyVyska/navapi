@@ -27,6 +27,27 @@ export function parseAuthType(value: string): AuthType {
   throw new NavApiError(`Unknown --auth value "${value}". Use clientSecret (default) or azureCli.`);
 }
 
+const FLAG_NAMES: Record<string, string> = {
+  clientId: '--client-id',
+  secret: '--secret',
+  azAccount: '--az-account',
+};
+
+/**
+ * Flags belonging to the other strategy are dropped on save rather than
+ * applied, which is worth an error and not silence: appending `--auth
+ * azureCli` to an existing `profile add` command would otherwise discard the
+ * client ID, leaving the retained client secret with nothing to pair it with.
+ */
+export function strayAuthFlags(
+  authType: AuthType,
+  opts: Record<string, unknown>,
+): string[] | undefined {
+  const irrelevant = authType === 'azureCli' ? ['clientId', 'secret'] : ['azAccount'];
+  const stray = irrelevant.filter((flag) => opts[flag]).map((flag) => FLAG_NAMES[flag]);
+  return stray.length ? stray : undefined;
+}
+
 export interface AzIdentity {
   user: string;
   /** Tenants az holds an account in. An identity can reach others besides these. */
@@ -41,7 +62,13 @@ export interface AzIdentity {
  * delegated admin or a guest invite. So collapse az's accounts by username.
  */
 async function azIdentities(): Promise<AzIdentity[]> {
-  const [accounts, active] = await Promise.all([listAzureCliAccounts(), activeAzureCliAccount()]);
+  const [accounts, active] = await Promise.all([
+    listAzureCliAccounts(),
+    // An unusable active account — an expired refresh token, a transient az
+    // error — costs only the "signed in now" marker. It must not hide the
+    // identities az does know, or profile add would save an unpinned profile.
+    activeAzureCliAccount().catch(() => undefined),
+  ]);
   const byUser = new Map<string, AzIdentity>();
   const seed = (user: string): AzIdentity => {
     const existing = byUser.get(user);
@@ -133,6 +160,14 @@ export function registerProfile(program: Command): void {
     .action(async (name: string, opts) => {
       const authType = opts.auth ? parseAuthType(opts.auth) : 'clientSecret';
       const azureCli = authType === 'azureCli';
+
+      const stray = strayAuthFlags(authType, opts);
+      if (stray) {
+        throw new NavApiError(
+          `${stray.join(' and ')} ${stray.length > 1 ? 'are' : 'is'} not used with --auth ${authType}, ` +
+            `and would be dropped. Remove ${stray.length > 1 ? 'them' : 'it'} to save this profile as ${authType}.`,
+        );
+      }
 
       // Commander can't make --client-id conditionally required, so it's an
       // optional flag the client-credentials path enforces by hand.

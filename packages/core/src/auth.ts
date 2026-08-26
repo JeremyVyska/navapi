@@ -337,6 +337,11 @@ export class AzureCliAuth implements TokenProvider {
    */
   private async resolveAccountSelector(): Promise<string[]> {
     if (!this.account) return ['--tenant', this.tenantId];
+    // Only the `--subscription` form is cacheable. It names one account entry,
+    // so it keeps meaning the pinned identity however az's active account
+    // changes. `--tenant` means "whoever is active", so it has to be
+    // re-checked every time — caching it would let a later `az login` as
+    // somebody else mint tokens for a profile pinned to a different identity.
     if (this.selector) return this.selector;
 
     const opts = { azPath: this.azPath, exec: this.exec };
@@ -363,10 +368,7 @@ export class AzureCliAuth implements TokenProvider {
     // alone. Falling back for any other one would quietly authenticate as
     // somebody the profile didn't ask for.
     const active = await activeAzureCliAccount(opts);
-    if (active && is(active)) {
-      this.selector = ['--tenant', this.tenantId];
-      return this.selector;
-    }
+    if (active && is(active)) return ['--tenant', this.tenantId];
     throw this.cannotSelect(accounts, active);
   }
 
