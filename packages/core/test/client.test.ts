@@ -369,6 +369,15 @@ describe('BcClient list pagination', () => {
     expect(error.message).toContain(`${ODATA}/Company(Id=${COMPANY_ID})/MissingService?$top=1`);
   });
 
+  it('does not duplicate the URL in transport errors', async () => {
+    const { client } = makeClient([], COMPANY_ID);
+    const expectedUrl = `${API}/v2.0/companies(${COMPANY_ID})/customers`;
+
+    const error = await client.list('customers').catch((caught) => caught);
+
+    expect(error.message).toBe(`Request failed: GET ${expectedUrl}`);
+  });
+
   it('rejects API-only operations for case-insensitive ODataV4 route names', async () => {
     const { client } = makeClient([]);
 

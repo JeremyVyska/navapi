@@ -307,7 +307,9 @@ export class BcClient {
         ({ data } = await this.http.request('GET', url, { headers }));
       } catch (error) {
         if (error instanceof Error) {
-          error.message = `${error.message} (GET ${url})`;
+          if (!error.message.includes(`GET ${url}`)) {
+            error.message = `${error.message} (GET ${url})`;
+          }
           throw error;
         }
         throw new NavApiError(`Failed to read ${url}`, { cause: error });
