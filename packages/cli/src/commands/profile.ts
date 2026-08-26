@@ -185,9 +185,11 @@ export function registerProfile(program: Command): void {
         await store.set(name, secret);
         how = `secret in ${backend}`;
       } else {
+        // "required", not "stored": the mode is what has no secret. A profile
+        // switched over from a client secret still has one sitting in the store.
         how = azAccount
-          ? `auth: Azure CLI as ${azAccount} — no secret stored`
-          : 'auth: Azure CLI — no secret stored';
+          ? `auth: Azure CLI as ${azAccount} — no secret required`
+          : 'auth: Azure CLI — no secret required';
         // Switching away from a secret leaves one behind that nothing uses.
         // Say so rather than reporting "no secret stored" while one sits in
         // the keychain — but don't delete it: an Entra client secret is shown
