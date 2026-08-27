@@ -66,10 +66,22 @@ function request(server: UiServer, pathname: string, init: RequestInit = {}): Pr
 describe('UI server security and lifecycle', () => {
   it('keeps the bearer token out of HTML and requires it for API requests', async () => {
     const server = await start();
-    const html = await (await fetch(`http://127.0.0.1:${server.port}/`)).text();
+    const rootResponse = await fetch(`http://127.0.0.1:${server.port}/`);
+    const html = await rootResponse.text();
 
     expect(html).toContain('Business Central APIs');
+    expect(html).toContain('/assets/codicon.css');
     expect(html).not.toContain(server.token);
+    expect(rootResponse.headers.get('content-security-policy')).toContain("font-src 'self'");
+    expect(rootResponse.headers.get('content-security-policy')).toContain("style-src 'self'");
+    const codiconCss = await fetch(`http://127.0.0.1:${server.port}/assets/codicon.css`);
+    expect(codiconCss.headers.get('content-type')).toContain('text/css');
+    expect(await codiconCss.text()).toContain('.codicon-symbol-class:before');
+    expect(
+      await fetch(`http://127.0.0.1:${server.port}/assets/codicon.ttf`).then((response) =>
+        response.headers.get('content-type'),
+      ),
+    ).toBe('font/ttf');
     expect(
       await fetch(`http://127.0.0.1:${server.port}/api/state`).then((response) => response.status),
     ).toBe(401);

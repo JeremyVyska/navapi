@@ -38,7 +38,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@navapi/core": "workspace:*"
+    "@navapi/core": "workspace:*",
+    "@vscode/codicons": "0.0.46-24"
   },
   "devDependencies": {
     "@napi-rs/keyring": "^1.1.0",

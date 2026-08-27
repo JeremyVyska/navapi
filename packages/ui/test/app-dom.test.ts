@@ -171,14 +171,13 @@ describe('browser application DOM behavior', () => {
     expect(routeToggle.getAttribute('aria-expanded')).toBe('false');
     expect(routeToggle.textContent).toContain('1 entity sets');
     expect(routeChildren.hidden).toBe(true);
-    expect(routeToggle.querySelector('.tree-icon')?.getAttribute('viewBox')).toBe('0 0 16 16');
-    expect((routeToggle.querySelector('.tree-icon') as SVGElement).dataset.codicon).toBe('plug');
+    expect(routeToggle.querySelector('.tree-icon')?.classList.contains('codicon-plug')).toBe(true);
     routeToggle.click();
     expect(routeToggle.getAttribute('aria-expanded')).toBe('true');
     expect(routeChildren.hidden).toBe(false);
-    expect((routeChildren.querySelector('.entity .tree-icon') as SVGElement).dataset.codicon).toBe(
-      'symbol-class',
-    );
+    expect(
+      routeChildren.querySelector('.entity .tree-icon')?.classList.contains('codicon-symbol-class'),
+    ).toBe(true);
 
     (routeChildren.querySelector('.entity') as HTMLButtonElement).dispatchEvent(
       new dom.window.MouseEvent('click', { bubbles: true }),

@@ -29,9 +29,12 @@ const DEFAULT_IDLE_TIMEOUT = 30_000;
 const DEFAULT_STARTUP_GRACE = 60_000;
 const INSTANCE_FILE = 'ui-instance.json';
 const STARTUP_LOCK_FILE = 'ui-start.lock';
-const { version: packageVersion } = createRequire(import.meta.url)('../package.json') as {
+const require = createRequire(import.meta.url);
+const { version: packageVersion } = require('../package.json') as {
   version: string;
 };
+const codiconCssPath = require.resolve('@vscode/codicons/dist/codicon.css');
+const codiconFontPath = require.resolve('@vscode/codicons/dist/codicon.ttf');
 
 interface InstanceRecord {
   pid: number;
@@ -84,7 +87,7 @@ function secureHeaders(nonce?: string): Record<string, string> {
   return {
     'cache-control': 'no-store',
     'content-security-policy': nonce
-      ? `default-src 'none'; connect-src 'self'; img-src 'self' data:; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`
+      ? `default-src 'none'; connect-src 'self'; font-src 'self'; img-src 'self' data:; style-src 'self' 'nonce-${nonce}'; script-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`
       : "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
     'cross-origin-opener-policy': 'same-origin',
     'cross-origin-resource-policy': 'same-origin',
@@ -254,6 +257,10 @@ function launchUrl(port: number, token: string, profile?: string): string {
 }
 
 export async function startUiServer(options: UiServerOptions = {}): Promise<UiServer> {
+  const [codiconCss, codiconFont] = await Promise.all([
+    readFile(codiconCssPath),
+    readFile(codiconFontPath),
+  ]);
   const configDir = options.configDir ?? defaultConfigDir();
   const instanceFile = path.join(configDir, INSTANCE_FILE);
   const startupLockFile = path.join(configDir, STARTUP_LOCK_FILE);
@@ -637,6 +644,22 @@ export async function startUiServer(options: UiServerOptions = {}): Promise<UiSe
           'content-type': 'text/html; charset=utf-8',
         });
         response.end(renderAppHtml(nonce, options.version ?? packageVersion));
+        return;
+      }
+      if (request.method === 'GET' && requestUrl.pathname === '/assets/codicon.css') {
+        response.writeHead(200, {
+          ...secureHeaders(),
+          'content-type': 'text/css; charset=utf-8',
+        });
+        response.end(codiconCss);
+        return;
+      }
+      if (request.method === 'GET' && requestUrl.pathname === '/assets/codicon.ttf') {
+        response.writeHead(200, {
+          ...secureHeaders(),
+          'content-type': 'font/ttf',
+        });
+        response.end(codiconFont);
         return;
       }
       if (!requestUrl.pathname.startsWith('/api/')) {
