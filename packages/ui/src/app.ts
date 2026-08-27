@@ -30,10 +30,14 @@ export function renderAppHtml(nonce: string, version: string): string {
     .section { flex:0 1 auto; min-height:38px; max-height:30%; display:flex; flex-direction:column; border-bottom:1px solid var(--line); }
     .section.endpoint-section { flex:1 1 0; max-height:none; }
     .section.collapsed { flex:0 0 38px; }
+    .section.context-section.collapsed { flex-basis:54px; }
     .section-head { flex:0 0 38px; display:flex; align-items:center; gap:6px; padding:5px 12px; text-transform:uppercase; letter-spacing:.08em; font-size:11px; color:var(--muted); font-weight:700; }
+    .section-head.has-context { flex-basis:54px; }
     .section-head > button:not(.section-toggle) { padding:2px 7px; }
     .section-toggle { min-width:0; display:flex; align-items:center; gap:8px; border:0; background:transparent; padding:3px 0; color:inherit; font-weight:inherit; text-transform:inherit; letter-spacing:inherit; }
-    .section-context { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-transform:none; letter-spacing:normal; font-weight:400; }
+    .section-heading { min-width:0; flex:1; overflow:hidden; }
+    .section-heading .section-toggle { width:100%; white-space:nowrap; }
+    .section-context { display:block; min-width:0; padding-left:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-transform:none; letter-spacing:normal; font-weight:400; }
     .section-toggle .chevron { transform:rotate(45deg); }
     .section-toggle[aria-expanded="false"] .chevron { transform:rotate(-45deg); }
     .section-body { min-height:0; overflow:auto; padding:0 12px 10px; }
@@ -81,8 +85,8 @@ export function renderAppHtml(nonce: string, version: string): string {
     <header><div class="brand"><span>nav</span>api</div><div class="version">v${version}</div></header>
     <div class="side-scroll">
       <section class="section"><div class="section-head"><button class="section-toggle" type="button" aria-expanded="true" aria-controls="profiles"><span class="chevron"></span><span>Profiles</span></button><span class="grow"></span><button id="editProfile">Edit</button><button id="addProfile">+</button></div><div id="profiles" class="section-body"></div></section>
-      <section class="section"><div class="section-head"><button class="section-toggle" type="button" aria-expanded="true" aria-controls="companies"><span class="chevron"></span><span>Companies</span></button><span id="companiesProfile" class="section-context"></span><span class="grow"></span><button id="refreshCompanies">↻</button></div><div id="companies" class="section-body"></div></section>
-      <section class="section endpoint-section"><div class="section-head"><button class="section-toggle" type="button" aria-expanded="true" aria-controls="endpoints"><span class="chevron"></span><span>Endpoint Browser</span></button><span id="endpointsProfile" class="section-context"></span><span class="grow"></span><button id="discover">↻</button></div><div id="endpoints" class="section-body"></div></section>
+      <section class="section context-section"><div class="section-head has-context"><div class="section-heading"><button class="section-toggle" type="button" aria-expanded="true" aria-controls="companies"><span class="chevron"></span><span>Companies</span></button><span id="companiesProfile" class="section-context"></span></div><button id="refreshCompanies">↻</button></div><div id="companies" class="section-body"></div></section>
+      <section class="section context-section endpoint-section"><div class="section-head has-context"><div class="section-heading"><button class="section-toggle" type="button" aria-expanded="true" aria-controls="endpoints"><span class="chevron"></span><span>Endpoint Browser</span></button><span id="endpointsProfile" class="section-context"></span></div><button id="discover">↻</button></div><div id="endpoints" class="section-body"></div></section>
     </div>
   </aside>
   <main>

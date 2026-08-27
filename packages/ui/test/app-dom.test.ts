@@ -131,6 +131,12 @@ describe('browser application DOM behavior', () => {
       );
       expect(dom?.window.document.querySelector('#companiesProfile')?.textContent).toBe(malicious);
       expect(dom?.window.document.querySelector('#endpointsProfile')?.textContent).toBe(malicious);
+      expect(
+        dom?.window.document.querySelector('#companiesProfile')?.parentElement?.className,
+      ).toBe('section-heading');
+      expect(
+        dom?.window.document.querySelector('#endpointsProfile')?.parentElement?.className,
+      ).toBe('section-heading');
       expect(dom?.window.document.querySelectorAll('img')).toHaveLength(0);
       expect(dom?.window.location.hash).toBe('');
       expect(dom?.window.sessionStorage.getItem('navapi.sessionToken')).toBe('session-token');
