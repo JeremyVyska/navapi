@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { isApiRoutePath } from './routes.js';
 import type { CachedRouteMetadata, RouteMetadata } from './types.js';
 
 function sanitize(segment: string): string {
@@ -73,6 +74,10 @@ export class MetadataCache {
     }
     entries.sort((a, b) => a.routePath.localeCompare(b.routePath));
     return entries;
+  }
+
+  async listApiRoutes(profile: string): Promise<CachedRouteMetadata[]> {
+    return (await this.list(profile)).filter((entry) => isApiRoutePath(entry.routePath));
   }
 
   async clear(profile: string): Promise<void> {

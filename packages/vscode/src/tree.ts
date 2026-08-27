@@ -281,7 +281,7 @@ export class EndpointsProvider extends BaseProvider<RouteNode | EntitySetNode | 
     if (!node) {
       const profileName = await activeProfileName();
       if (!profileName) return [{ kind: 'hint', hintFor: 'noProfile' }];
-      const cached = await metadataCache().list(profileName);
+      const cached = await metadataCache().listApiRoutes(profileName);
       if (!cached.length) return [{ kind: 'hint', hintFor: 'discover', profileName }];
       return cached.map((c) => ({ kind: 'route', profileName, routePath: c.routePath }));
     }

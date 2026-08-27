@@ -178,6 +178,7 @@ describe('MetadataCache', () => {
   it('stores per profile × route with sanitized filenames', async () => {
     const cache = new MetadataCache(tmpDir);
     await cache.set('p1', 'contoso/fieldops/v1.0', { namespace: 'X', entitySets: [] });
+    await cache.set('p1', 'ODataV4', { namespace: 'Microsoft.NAV', entitySets: [] });
     await cache.set('p1', 'v2.0', { namespace: 'Microsoft.NAV', entitySets: [] });
     await cache.set('p2', 'v2.0', { namespace: 'Microsoft.NAV', entitySets: [] });
 
@@ -186,7 +187,11 @@ describe('MetadataCache', () => {
     expect(entry?.fetchedAt).toBeTruthy();
 
     const listed = await cache.list('p1');
-    expect(listed.map((e) => e.routePath)).toEqual(['contoso/fieldops/v1.0', 'v2.0']);
+    expect(listed.map((e) => e.routePath)).toEqual(['contoso/fieldops/v1.0', 'ODataV4', 'v2.0']);
+    expect((await cache.listApiRoutes('p1')).map((e) => e.routePath)).toEqual([
+      'contoso/fieldops/v1.0',
+      'v2.0',
+    ]);
 
     await cache.clear('p1');
     expect(await cache.list('p1')).toEqual([]);
