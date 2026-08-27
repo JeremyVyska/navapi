@@ -25,7 +25,7 @@ export function renderAppHtml(nonce: string, version: string): string {
     header { height:54px; display:flex; align-items:center; gap:9px; padding:0 14px; border-bottom:1px solid var(--line); }
     .brand { font-size:17px; font-weight:700; letter-spacing:.2px; } .brand span { color:var(--accent); }
     .version { color:var(--muted); font-size:11px; margin-left:auto; }
-    .side-scroll { overflow:auto; padding:12px; } .section { margin-bottom:18px; }
+    .side-scroll { flex-grow:1; flex-shrink:1; flex-basis:0; min-height:0; overflow:auto; padding:12px; } .section { margin-bottom:18px; }
     .section-head { display:flex; align-items:center; gap:6px; margin-bottom:7px; text-transform:uppercase; letter-spacing:.08em; font-size:11px; color:var(--muted); font-weight:700; }
     .section-head button { margin-left:auto; padding:2px 7px; }
     .item { display:block; width:100%; border:0; background:transparent; text-align:left; padding:7px 8px; border-radius:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
