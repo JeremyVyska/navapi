@@ -71,6 +71,9 @@ describe('UI server security and lifecycle', () => {
 
     expect(html).toContain('Business Central APIs');
     expect(html).toContain('/assets/codicon.css');
+    expect(html).toContain('@media (prefers-color-scheme: dark)');
+    expect(html).toContain('color-scheme:light');
+    expect(html).toContain('color-scheme:dark');
     expect(html).not.toContain(server.token);
     expect(rootResponse.headers.get('content-security-policy')).toContain("font-src 'self'");
     expect(rootResponse.headers.get('content-security-policy')).toContain("style-src 'self'");

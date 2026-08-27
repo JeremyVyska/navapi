@@ -15,11 +15,14 @@ export function renderAppHtml(nonce: string, version: string): string {
   <title>navapi</title>
   <link rel="stylesheet" href="/assets/codicon.css">
   <style nonce="${nonce}">
-    :root { color-scheme: light dark; --bg:#0d1117; --panel:#161b22; --section:#1b2028; --panel2:#21262d; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#2f81f7; --danger:#f85149; --ok:#3fb950; }
+    :root { color-scheme:light; --bg:#fff; --panel:#f6f8fa; --section:#eaeef2; --panel2:#dbe5f1; --line:#d0d7de; --text:#1f2328; --muted:#656d76; --accent:#0969da; --on-accent:#fff; --danger:#cf222e; --ok:#1a7f37; --entity:#9a6700; --backdrop:rgba(31,35,40,.4); }
+    @media (prefers-color-scheme: dark) {
+      :root { color-scheme:dark; --bg:#0d1117; --panel:#161b22; --section:#1b2028; --panel2:#21262d; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#2f81f7; --on-accent:#fff; --danger:#ff7b72; --ok:#3fb950; --entity:#ee9d28; --backdrop:rgba(0,0,0,.65); }
+    }
     * { box-sizing:border-box; } html,body { height:100%; margin:0; }
     body { font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--text); overflow:hidden; }
     button,input,select { font:inherit; } button { border:1px solid var(--line); background:var(--panel2); color:var(--text); border-radius:6px; padding:6px 10px; cursor:pointer; }
-    button:hover { border-color:var(--muted); } button.primary { background:var(--accent); border-color:var(--accent); color:white; } button.danger { color:#ff7b72; }
+    button:hover { border-color:var(--muted); } button.primary { background:var(--accent); border-color:var(--accent); color:var(--on-accent); } button.danger { color:var(--danger); }
     button:disabled { opacity:.55; cursor:default; } input,select { background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:7px 9px; min-width:0; }
     #shell { display:grid; grid-template-columns:300px 1fr; height:100%; }
     aside { border-right:1px solid var(--line); background:var(--panel); display:flex; flex-direction:column; min-width:0; }
@@ -35,7 +38,7 @@ export function renderAppHtml(nonce: string, version: string): string {
     .section-head.has-context { flex-basis:54px; }
     .section-head > button:not(.section-toggle) { padding:2px 7px; }
     .section-toggle { min-width:0; display:flex; align-items:center; gap:8px; border:0; background:transparent; padding:3px 0; color:var(--text); font-weight:inherit; text-transform:inherit; letter-spacing:inherit; }
-    .section-toggle:hover { color:white; border-color:transparent; }
+    .section-toggle:hover { color:var(--text); border-color:transparent; }
     .section-heading { min-width:0; flex:1; overflow:hidden; }
     .section-heading .section-toggle { width:100%; white-space:nowrap; }
     .section-context { display:block; min-width:0; padding-left:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-transform:none; letter-spacing:normal; font-weight:400; }
@@ -51,8 +54,8 @@ export function renderAppHtml(nonce: string, version: string): string {
     .chevron { width:7px; height:7px; flex:0 0 auto; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(-45deg); transition:transform .12s ease; }
     .route-toggle[aria-expanded="true"] .chevron { transform:rotate(45deg); }
     .tree-icon { width:16px; height:16px; flex:0 0 auto; }
-    .route-toggle .tree-icon { color:var(--fg); }
-    .entity { padding-left:31px; } .entity .tree-icon { color:#ee9d28; }
+    .route-toggle .tree-icon { color:var(--text); }
+    .entity { padding-left:31px; } .entity .tree-icon { color:var(--entity); }
     .route-children[hidden] { display:none; }
     main { min-width:0; display:flex; flex-direction:column; } #mainHead { flex:0 0 auto; } #content { flex:1; min-height:0; overflow:auto; padding:16px; }
     #title { font-size:14px; font-weight:650; } #status { color:var(--muted); margin-left:auto; max-width:40%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -69,9 +72,9 @@ export function renderAppHtml(nonce: string, version: string): string {
     th,td { padding:7px 10px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; max-width:360px; overflow:hidden; text-overflow:ellipsis; }
     th { position:sticky; top:0; background:var(--panel); color:var(--muted); cursor:pointer; z-index:1; } th.nonsort { cursor:default; } tr:hover td { background:var(--panel); }
     .chip { border-radius:10px; background:var(--panel2); padding:1px 8px; } .empty { color:var(--muted); padding:25px; text-align:center; }
-    .meta { color:var(--muted); } .error { color:#ff7b72; white-space:pre-wrap; } .ok { color:var(--ok); } .hidden { display:none; } .grow { flex:1; }
+    .meta { color:var(--muted); } .error { color:var(--danger); white-space:pre-wrap; } .ok { color:var(--ok); } .hidden { display:none; } .grow { flex:1; }
     dialog { width:min(700px,calc(100vw - 32px)); max-height:calc(100vh - 40px); overflow:auto; border:1px solid var(--line); border-radius:9px; background:var(--panel); color:var(--text); padding:0; }
-    dialog::backdrop { background:rgba(0,0,0,.65); } .dialog-head { display:flex; align-items:center; padding:13px 16px; border-bottom:1px solid var(--line); } .dialog-head h2 { font-size:15px; margin:0; }
+    dialog::backdrop { background:var(--backdrop); } .dialog-head { display:flex; align-items:center; padding:13px 16px; border-bottom:1px solid var(--line); } .dialog-head h2 { font-size:15px; margin:0; }
     .dialog-body { padding:15px 16px; } .dialog-actions { display:flex; gap:8px; justify-content:flex-end; padding:12px 16px; border-top:1px solid var(--line); }
     .form-grid { display:grid; grid-template-columns:145px 1fr; gap:10px; align-items:center; } .form-grid label { color:var(--muted); } .form-grid input { width:100%; }
     pre { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:12px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
