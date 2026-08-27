@@ -273,6 +273,7 @@
     "@napi-rs/keyring": "^1.1.0",
     "@navapi/core": "workspace:*",
     "@navapi/mcp": "workspace:*",
+    "@navapi/ui": "workspace:*",
     "@types/node": "^24.0.0",
     "@types/vscode": "~1.101.0",
     "zod": "^3.25.0",

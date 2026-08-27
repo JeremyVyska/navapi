@@ -3,6 +3,10 @@
 All notable changes to the **navapi** extension are documented here. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- Share the records grid, OData filter, schema, and tree presentation models with `@navapi/ui`; extension behavior is unchanged.
+
 ## 0.2.1
 
 - Marketplace listing: reorganized so the core functionality leads, with the

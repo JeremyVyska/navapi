@@ -21,8 +21,13 @@ navapi get salesOrders <id> --nav salesOrderLines  # navigation properties (Fast
 navapi get salesOrders --filter "status eq 'Open'" --json | jq '.[].number'
 navapi patch customers <id> --set blocked=All     # ETags handled for you
 navapi delete salesOrders <id> --yes
+
+# Dedicated browser UI (loopback-only, authenticated per process)
+navapi ui
 ```
 
 Humans on a TTY get tables; pipes and `--json` get stable JSON.
 
 Secrets go to the **OS keychain** when available (file fallback otherwise; `NAVAPI_CLIENT_SECRET` env var covers CI). `navapi secrets status` shows where each profile's secret lives; `navapi secrets migrate` moves any plaintext leftovers into the keychain.
+
+`navapi ui` opens a read-only local web application using the same profiles, secrets, companies, and metadata cache. Use `--no-open` for headless startup; it prints the process-scoped authenticated URL, which must be treated as a secret. Use `--idle-timeout <seconds>` to change how long the server waits after browser heartbeats stop. On headless Linux systems without a desktop keyring session, set `NAVAPI_SECRET_BACKEND=file` deliberately.
