@@ -43,9 +43,9 @@ export function renderAppHtml(nonce: string, version: string): string {
     .route-count { margin-left:auto; color:var(--muted); font-size:11px; font-weight:400; }
     .chevron { width:7px; height:7px; flex:0 0 auto; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(-45deg); transition:transform .12s ease; }
     .route-toggle[aria-expanded="true"] .chevron { transform:rotate(45deg); }
-    .tree-icon { width:16px; height:16px; flex:0 0 auto; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
-    .route-toggle .tree-icon { color:var(--muted); }
-    .entity { padding-left:31px; } .entity .tree-icon { color:#d29922; }
+    .tree-icon { width:16px; height:16px; flex:0 0 auto; fill:currentColor; }
+    .route-toggle .tree-icon { color:var(--fg); }
+    .entity { padding-left:31px; } .entity .tree-icon { color:#ee9d28; }
     .route-children[hidden] { display:none; }
     main { min-width:0; display:flex; flex-direction:column; } #mainHead { flex:0 0 auto; } #content { flex:1; min-height:0; overflow:auto; padding:16px; }
     #title { font-size:14px; font-weight:650; } #status { color:var(--muted); margin-left:auto; max-width:40%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -146,9 +146,12 @@ export function renderAppHtml(nonce: string, version: string): string {
   function text(tag, value, cls) { const node = document.createElement(tag); node.textContent = String(value ?? ''); if (cls) node.className = cls; return node; }
   function button(label, action, cls) { const node = text('button', label, cls); node.addEventListener('click', action); return node; }
   function treeIcon(kind) {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg','svg'); svg.setAttribute('viewBox','0 0 20 20'); svg.setAttribute('aria-hidden','true'); svg.classList.add('tree-icon');
+    const svg = document.createElementNS('http://www.w3.org/2000/svg','svg'); svg.setAttribute('viewBox','0 0 16 16'); svg.setAttribute('aria-hidden','true'); svg.classList.add('tree-icon');
     const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-    path.setAttribute('d', kind === 'route' ? 'M7 2v5m6-5v5M5 7h10v2a5 5 0 0 1-4 4.58V18H9v-4.42A5 5 0 0 1 5 9V7Z' : 'M6 4v12m0-9h5m-5 6h5m0-8v4m0 2v4m0-6h4m-4 6h4');
+    const codicon = kind === 'route' ? 'plug' : 'symbol-class'; svg.dataset.codicon = codicon;
+    path.setAttribute('d', kind === 'route'
+      ? 'M10.723 4H10V1.5C10 1.224 9.776 1 9.5 1C9.224 1 9 1.224 9 1.5V4H7V1.5C7 1.224 6.776 1 6.5 1C6.224 1 6 1.224 6 1.5V4H5.277C4.573 4 4 4.573 4 5.278V8C4 10.036 5.529 11.722 7.5 11.969V14.5C7.5 14.776 7.724 15 8 15C8.276 15 8.5 14.776 8.5 14.5V11.969C10.471 11.722 12 10.037 12 8V5.278C12 4.573 11.427 4 10.723 4ZM11 8C11 9.654 9.654 11 8 11C6.346 11 5 9.654 5 8V5.278C5 5.125 5.124 5 5.277 5H10.722C10.875 5 10.999 5.125 10.999 5.278V8H11Z'
+      : 'M13.2069 10.4999C13.0194 10.3125 12.7651 10.2072 12.4999 10.2072C12.2348 10.2072 11.9805 10.3125 11.7929 10.4999L11.2929 10.9999H8.99994V6.99994H10.3629C10.2479 7.1876 10.1989 7.40832 10.2238 7.62701C10.2486 7.84571 10.3458 8.04983 10.4999 8.20694L11.2929 8.99994C11.4805 9.18741 11.7348 9.29273 11.9999 9.29273C12.2651 9.29273 12.5194 9.18741 12.7069 8.99994L13.9999 7.70694C14.1874 7.51941 14.2927 7.2651 14.2927 6.99994C14.2927 6.73478 14.1874 6.48047 13.9999 6.29294L13.2069 5.49994C13.0194 5.31247 12.7651 5.20715 12.4999 5.20715C12.2348 5.20715 11.9805 5.31247 11.7929 5.49994L11.2929 5.99994H6.70694L7.49994 5.20694C7.68741 5.01941 7.79273 4.7651 7.79273 4.49994C7.79273 4.23478 7.68741 3.98047 7.49994 3.79294L6.20694 2.49994C6.01941 2.31247 5.7651 2.20715 5.49994 2.20715C5.23478 2.20715 4.98047 2.31247 4.79294 2.49994L1.49994 5.79294C1.31247 5.98047 1.20715 6.23478 1.20715 6.49994C1.20715 6.7651 1.31247 7.01941 1.49994 7.20694L2.79294 8.49994C2.98047 8.68741 3.23478 8.79273 3.49994 8.79273C3.7651 8.79273 4.01941 8.68741 4.20694 8.49994L5.70694 6.99994H7.99994V11.4999C7.99994 11.6325 8.05262 11.7597 8.14639 11.8535C8.24015 11.9473 8.36733 11.9999 8.49994 11.9999H10.3629C10.2479 12.1876 10.1989 12.4083 10.2238 12.627C10.2486 12.8457 10.3458 13.0498 10.4999 13.2069L11.2929 13.9999C11.4805 14.1874 11.7348 14.2927 11.9999 14.2927C12.2651 14.2927 12.5194 14.1874 12.7069 13.9999L13.9999 12.7069C14.1874 12.5194 14.2927 12.2651 14.2927 11.9999C14.2927 11.7348 14.1874 11.4805 13.9999 11.2929L13.2069 10.4999ZM3.49994 7.79294L2.20694 6.49994L5.49994 3.20694L6.79294 4.49994L3.49994 7.79294ZM13.2929 6.99994L11.9999 8.29294L11.2069 7.49994L12.4999 6.20694L13.2929 6.99994ZM11.9999 13.2929L11.2069 12.4999L12.4999 11.2069L13.2929 11.9999L11.9999 13.2929Z');
     svg.append(path); return svg;
   }
   function showError(error) { setStatus(error instanceof Error ? error.message : String(error), true); }
