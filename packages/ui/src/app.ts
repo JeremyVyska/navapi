@@ -15,7 +15,7 @@ export function renderAppHtml(nonce: string, version: string): string {
   <title>navapi</title>
   <link rel="stylesheet" href="/assets/codicon.css">
   <style nonce="${nonce}">
-    :root { color-scheme: light dark; --bg:#0d1117; --panel:#161b22; --panel2:#21262d; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#2f81f7; --danger:#f85149; --ok:#3fb950; }
+    :root { color-scheme: light dark; --bg:#0d1117; --panel:#161b22; --section:#1b2028; --panel2:#21262d; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#2f81f7; --danger:#f85149; --ok:#3fb950; }
     * { box-sizing:border-box; } html,body { height:100%; margin:0; }
     body { font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--text); overflow:hidden; }
     button,input,select { font:inherit; } button { border:1px solid var(--line); background:var(--panel2); color:var(--text); border-radius:6px; padding:6px 10px; cursor:pointer; }
@@ -31,7 +31,7 @@ export function renderAppHtml(nonce: string, version: string): string {
     .section.endpoint-section { flex:1 1 0; max-height:none; }
     .section.collapsed { flex:0 0 38px; }
     .section.context-section.collapsed { flex-basis:54px; }
-    .section-head { flex:0 0 38px; display:flex; align-items:center; gap:6px; padding:5px 12px; background:var(--panel2); text-transform:uppercase; letter-spacing:.08em; font-size:11px; color:var(--muted); font-weight:700; }
+    .section-head { flex:0 0 38px; display:flex; align-items:center; gap:6px; padding:5px 12px; background:var(--section); text-transform:uppercase; letter-spacing:.08em; font-size:11px; color:var(--muted); font-weight:700; }
     .section-head.has-context { flex-basis:54px; }
     .section-head > button:not(.section-toggle) { padding:2px 7px; }
     .section-toggle { min-width:0; display:flex; align-items:center; gap:8px; border:0; background:transparent; padding:3px 0; color:var(--text); font-weight:inherit; text-transform:inherit; letter-spacing:inherit; }
