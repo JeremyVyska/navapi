@@ -45,8 +45,14 @@ function inferAuth(clientId?: string): ProfileAuth {
  * undefined` — which fails against Entra with an opaque `invalid_client`.
  */
 function serializeProfile(profile: ProfileConfig): StoredProfile {
-  if (profile.auth.type !== 'clientSecret') return profile;
-  return { ...profile, clientId: profile.auth.clientId };
+  // Normalize on the way in as well: `upsert` is public and callers outside
+  // this package still build the pre-`auth` literal with a top-level clientId
+  // (the MCP server's own tests do). Reading `profile.auth.type` directly
+  // threw on those, so one write path now handles both shapes, the same way
+  // `load()` handles both on read.
+  const normalized = normalizeProfile(profile as StoredProfile);
+  if (normalized.auth.type !== 'clientSecret') return normalized;
+  return { ...normalized, clientId: normalized.auth.clientId };
 }
 
 /** Named profiles stored in `<configDir>/profiles.json` (no secrets in here). */

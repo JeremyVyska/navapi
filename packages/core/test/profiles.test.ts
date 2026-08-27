@@ -132,6 +132,24 @@ describe('ProfileStore', () => {
     expect(written.profiles.other.clientId).toBeUndefined();
   });
 
+  it('accepts a profile handed in without `auth`, the way older embedders build one', async () => {
+    // upsert is public and ProfileConfig only gained `auth` here, so callers
+    // outside this package still pass the top-level clientId literal. Reading
+    // profile.auth.type unguarded threw a TypeError and broke every MCP test.
+    const store = new ProfileStore(tmpDir);
+    await store.upsert({
+      name: 'embedded',
+      tenantId: 't',
+      clientId: 'c',
+      environment: 'Sandbox',
+    } as unknown as ProfileConfig);
+
+    const written = JSON.parse(await readFile(path.join(tmpDir, 'profiles.json'), 'utf8'));
+    expect(written.profiles.embedded.auth).toEqual({ type: 'clientSecret', clientId: 'c' });
+    expect(written.profiles.embedded.clientId).toBe('c');
+    expect((await store.get('embedded')).auth).toEqual({ type: 'clientSecret', clientId: 'c' });
+  });
+
   it('gives a friendly error when nothing is configured', async () => {
     const store = new ProfileStore(tmpDir);
     await expect(store.get()).rejects.toThrow(/navapi profile add/);
