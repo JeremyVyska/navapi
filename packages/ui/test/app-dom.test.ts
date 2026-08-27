@@ -136,9 +136,31 @@ describe('browser application DOM behavior', () => {
     const sidebarStyle = dom.window.getComputedStyle(
       dom.window.document.querySelector('.side-scroll') as HTMLElement,
     );
-    expect(sidebarStyle.flexGrow).toBe('1');
-    expect(sidebarStyle.minHeight).toBe('0px');
-    expect(sidebarStyle.overflow).toBe('auto');
+    expect(sidebarStyle.overflow).toBe('hidden');
+    const sectionToggles = dom.window.document.querySelectorAll('.section-toggle');
+    expect(sectionToggles).toHaveLength(3);
+    expect([...sectionToggles].map((toggle) => toggle.textContent)).toEqual([
+      'Profiles',
+      'Companies',
+      'Endpoint Browser',
+    ]);
+    for (const [index, bodyId] of ['profiles', 'companies', 'endpoints'].entries()) {
+      const body = dom.window.document.querySelector(`#${bodyId}`) as HTMLElement;
+      expect(dom.window.getComputedStyle(body).overflow).toBe('auto');
+      (sectionToggles[index] as HTMLButtonElement).click();
+      expect(sectionToggles[index].getAttribute('aria-expanded')).toBe('false');
+      expect(body.hidden).toBe(true);
+      expect(sectionToggles[index].closest('.section')?.classList.contains('collapsed')).toBe(true);
+      for (const [otherIndex, otherBodyId] of ['profiles', 'companies', 'endpoints'].entries()) {
+        if (otherIndex !== index) {
+          expect((dom.window.document.querySelector(`#${otherBodyId}`) as HTMLElement).hidden).toBe(
+            false,
+          );
+        }
+      }
+      (sectionToggles[index] as HTMLButtonElement).click();
+      expect(body.hidden).toBe(false);
+    }
 
     const routeToggle = dom.window.document.querySelector(
       '#endpoints .route-toggle',

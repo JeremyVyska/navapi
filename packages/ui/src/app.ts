@@ -25,9 +25,16 @@ export function renderAppHtml(nonce: string, version: string): string {
     header { height:54px; display:flex; align-items:center; gap:9px; padding:0 14px; border-bottom:1px solid var(--line); }
     .brand { font-size:17px; font-weight:700; letter-spacing:.2px; } .brand span { color:var(--accent); }
     .version { color:var(--muted); font-size:11px; margin-left:auto; }
-    .side-scroll { flex-grow:1; flex-shrink:1; flex-basis:0; min-height:0; overflow:auto; padding:12px; } .section { margin-bottom:18px; }
-    .section-head { display:flex; align-items:center; gap:6px; margin-bottom:7px; text-transform:uppercase; letter-spacing:.08em; font-size:11px; color:var(--muted); font-weight:700; }
-    .section-head button { margin-left:auto; padding:2px 7px; }
+    .side-scroll { flex:1 1 0; min-height:0; overflow:hidden; display:flex; flex-direction:column; }
+    .section { flex:0 1 auto; min-height:38px; max-height:30%; display:flex; flex-direction:column; border-bottom:1px solid var(--line); }
+    .section.endpoint-section { flex:1 1 0; max-height:none; }
+    .section.collapsed { flex:0 0 38px; }
+    .section-head { flex:0 0 38px; display:flex; align-items:center; gap:6px; padding:5px 12px; text-transform:uppercase; letter-spacing:.08em; font-size:11px; color:var(--muted); font-weight:700; }
+    .section-head > button:not(.section-toggle) { padding:2px 7px; }
+    .section-toggle { min-width:0; display:flex; align-items:center; gap:8px; border:0; background:transparent; padding:3px 0; color:inherit; font-weight:inherit; text-transform:inherit; letter-spacing:inherit; }
+    .section-toggle .chevron { transform:rotate(45deg); }
+    .section-toggle[aria-expanded="false"] .chevron { transform:rotate(-45deg); }
+    .section-body { min-height:0; overflow:auto; padding:0 12px 10px; }
     .item { display:block; width:100%; border:0; background:transparent; text-align:left; padding:7px 8px; border-radius:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .item:hover,.item.active { background:var(--panel2); } .item small { display:block; color:var(--muted); overflow:hidden; text-overflow:ellipsis; }
     .route-toggle,.entity { display:flex; align-items:center; gap:7px; }
@@ -71,9 +78,9 @@ export function renderAppHtml(nonce: string, version: string): string {
   <aside>
     <header><div class="brand"><span>nav</span>api</div><div class="version">v${version}</div></header>
     <div class="side-scroll">
-      <section class="section"><div class="section-head">Profiles <button id="editProfile">Edit</button><button id="addProfile">+</button></div><div id="profiles"></div></section>
-      <section class="section"><div class="section-head">Companies <button id="refreshCompanies">↻</button></div><div id="companies"></div></section>
-      <section class="section"><div class="section-head">Endpoints <button id="discover">↻</button></div><div id="endpoints"></div></section>
+      <section class="section"><div class="section-head"><button class="section-toggle" type="button" aria-expanded="true" aria-controls="profiles"><span class="chevron"></span><span>Profiles</span></button><span class="grow"></span><button id="editProfile">Edit</button><button id="addProfile">+</button></div><div id="profiles" class="section-body"></div></section>
+      <section class="section"><div class="section-head"><button class="section-toggle" type="button" aria-expanded="true" aria-controls="companies"><span class="chevron"></span><span>Companies</span></button><span class="grow"></span><button id="refreshCompanies">↻</button></div><div id="companies" class="section-body"></div></section>
+      <section class="section endpoint-section"><div class="section-head"><button class="section-toggle" type="button" aria-expanded="true" aria-controls="endpoints"><span class="chevron"></span><span>Endpoint Browser</span></button><span class="grow"></span><button id="discover">↻</button></div><div id="endpoints" class="section-body"></div></section>
     </div>
   </aside>
   <main>
@@ -145,6 +152,9 @@ export function renderAppHtml(nonce: string, version: string): string {
     svg.append(path); return svg;
   }
   function showError(error) { setStatus(error instanceof Error ? error.message : String(error), true); }
+  for (const toggle of document.querySelectorAll('.section-toggle')) {
+    toggle.addEventListener('click',()=>{const body=el(toggle.getAttribute('aria-controls'));const expanded=toggle.getAttribute('aria-expanded')==='true';toggle.setAttribute('aria-expanded',String(!expanded));toggle.closest('.section').classList.toggle('collapsed',expanded);body.hidden=expanded;});
+  }
 
   async function loadState(preferred) {
     const data = await api('/api/state');
