@@ -1,9 +1,4 @@
 export {
-  startUiServer,
-  type UiServer,
-  type UiServerOptions,
-} from './server.js';
-export {
   buildFilterExpression,
   buildGrid,
   classifyCell,
@@ -22,4 +17,9 @@ export {
   routeItem,
   schemaDocument,
   sortProfiles,
-} from './shared.js';
+} from '@navapi/core';
+export {
+  startUiServer,
+  type UiServer,
+  type UiServerOptions,
+} from './server.js';

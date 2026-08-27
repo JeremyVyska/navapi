@@ -24,7 +24,7 @@ export function registerUi(program: Command): void {
     })
     .option(
       '--idle-timeout <seconds>',
-      'Stop after this many seconds without a browser heartbeat',
+      'Stop after this many seconds without a browser heartbeat (default: 120)',
       positiveSeconds,
     )
     .option('--json', 'Print machine-readable startup information')

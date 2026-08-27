@@ -133,9 +133,6 @@ importers:
       '@navapi/mcp':
         specifier: workspace:*
         version: link:../mcp
-      '@navapi/ui':
-        specifier: workspace:*
-        version: link:../ui
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.2

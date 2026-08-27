@@ -5,4 +5,4 @@ export {
   type GridData,
   pickColumns,
   recordGrid,
-} from '@navapi/ui/shared';
+} from '@navapi/core';

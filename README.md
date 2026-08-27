@@ -33,6 +33,10 @@ navapi ui                # open the local web application
 
 > The bare `navapi` npm name is squatted by an empty placeholder — the CLI lives at `@navapi/cli`, but the command it installs is still `navapi`.
 
+On headless Linux or over SSH, navapi automatically falls back to `~/.navapi/secrets.json`
+when no desktop keyring session is available. Set `NAVAPI_SECRET_BACKEND=file`
+explicitly for predictable headless operation.
+
 ## What it looks like
 
 ```bash

@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startUiServer, type UiServer } from '../src/index.js';
+import { isExpectedHost, loopbackOrigin } from '../src/server.js';
 
 const EDMX = `<?xml version="1.0" encoding="utf-8"?>
 <edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
@@ -64,6 +65,17 @@ function request(server: UiServer, pathname: string, init: RequestInit = {}): Pr
 }
 
 describe('UI server security and lifecycle', () => {
+  it('accepts an omitted default port only when the server uses port 80', () => {
+    expect(isExpectedHost('127.0.0.1', 80)).toBe(true);
+    expect(isExpectedHost('127.0.0.1:80', 80)).toBe(true);
+    expect(isExpectedHost('127.0.0.1', 8080)).toBe(false);
+    expect(isExpectedHost('127.0.0.1:8080', 8080)).toBe(true);
+    expect(isExpectedHost('localhost:8080', 8080)).toBe(false);
+    expect(isExpectedHost('127.0.0.1@attacker.example', 80)).toBe(false);
+    expect(loopbackOrigin(80)).toBe('http://127.0.0.1');
+    expect(loopbackOrigin(8080)).toBe('http://127.0.0.1:8080');
+  });
+
   it('keeps the bearer token out of HTML and requires it for API requests', async () => {
     const server = await start();
     const rootResponse = await fetch(`http://127.0.0.1:${server.port}/`);
@@ -203,6 +215,11 @@ describe('UI API flows', () => {
       if (url.endsWith('/v2.0/$metadata')) {
         return new Response(EDMX, { headers: { 'content-type': 'application/xml' } });
       }
+      if (url.includes('/customers') && url.includes('$skip=2')) {
+        return Response.json({
+          value: [{ id: '00000000-0000-0000-0000-000000000012', number: '30000' }],
+        });
+      }
       if (url.includes('/customers') && url.includes('$skip=1')) {
         return Response.json({
           value: [{ id: '00000000-0000-0000-0000-000000000011', number: '20000' }],
@@ -214,7 +231,7 @@ describe('UI API flows', () => {
       if (url.includes('/customers')) {
         expect(new Headers(init?.headers).get('prefer')).toBe('odata.maxpagesize=50');
         return Response.json({
-          '@odata.count': 2,
+          '@odata.count': 3,
           value: [
             {
               id: '00000000-0000-0000-0000-000000000010',
@@ -303,7 +320,29 @@ describe('UI API flows', () => {
       headers: { 'content-type': 'application/json' },
     }).then((response) => response.json());
     expect(next.combinedGrid.rows).toHaveLength(2);
-    expect(next.cursor).toBeUndefined();
+    expect(next.cursor).toBeTypeOf('string');
+    expect(
+      await request(server, '/api/next', {
+        method: 'POST',
+        body: JSON.stringify({ cursor: query.cursor }),
+        headers: { 'content-type': 'application/json' },
+      }).then((response) => response.status),
+    ).toBe(410);
+
+    const last = await request(server, '/api/next', {
+      method: 'POST',
+      body: JSON.stringify({ cursor: next.cursor }),
+      headers: { 'content-type': 'application/json' },
+    }).then((response) => response.json());
+    expect(last.combinedGrid.rows).toHaveLength(3);
+    expect(last.cursor).toBeUndefined();
+    expect(
+      await request(server, '/api/next', {
+        method: 'POST',
+        body: JSON.stringify({ cursor: next.cursor }),
+        headers: { 'content-type': 'application/json' },
+      }).then((response) => response.status),
+    ).toBe(410);
 
     const navigation = await request(server, '/api/navigation', {
       method: 'POST',

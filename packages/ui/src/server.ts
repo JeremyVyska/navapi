@@ -7,25 +7,28 @@ import { setTimeout as delay } from 'node:timers/promises';
 import {
   BcClient,
   type BcRecord,
+  buildFilterExpression,
+  buildGrid,
   ClientCredentialsAuth,
   companyLabel,
   createClientForProfile,
   defaultConfigDir,
+  type FilterRow,
   findCompany,
   MetadataCache,
   type ODataQuery,
+  operatorsFor,
   type ProfileConfig,
   ProfileStore,
   resolveSecretStore,
 } from '@navapi/core';
 import { renderAppHtml } from './app.js';
 import { openDefaultBrowser } from './browser.js';
-import { buildFilterExpression, buildGrid, type FilterRow, operatorsFor } from './shared.js';
 
 const LOOPBACK = '127.0.0.1';
 const MAX_BODY_BYTES = 128 * 1024;
 const PAGE_SIZE = 50;
-const DEFAULT_IDLE_TIMEOUT = 30_000;
+const DEFAULT_IDLE_TIMEOUT = 120_000;
 const DEFAULT_STARTUP_GRACE = 60_000;
 const INSTANCE_FILE = 'ui-instance.json';
 const STARTUP_LOCK_FILE = 'ui-start.lock';
@@ -110,6 +113,25 @@ function safeEqual(left: string, right: string): boolean {
   const leftBytes = Buffer.from(left);
   const rightBytes = Buffer.from(right);
   return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
+}
+
+export function isExpectedHost(authority: string, port: number): boolean {
+  try {
+    const url = new URL(`http://${authority}`);
+    const effectivePort = url.port ? Number(url.port) : 80;
+    return (
+      url.hostname === LOOPBACK &&
+      url.username === '' &&
+      url.password === '' &&
+      effectivePort === port
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function loopbackOrigin(port: number): string {
+  return new URL(`http://${LOOPBACK}:${port}`).origin;
 }
 
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
@@ -253,7 +275,7 @@ function errorMessage(error: unknown): string {
 
 function launchUrl(port: number, token: string, profile?: string): string {
   const query = profile ? `?profile=${encodeURIComponent(profile)}` : '';
-  return `http://${LOOPBACK}:${port}/${query}#${token}`;
+  return `${loopbackOrigin(port)}/${query}#${token}`;
 }
 
 export async function startUiServer(options: UiServerOptions = {}): Promise<UiServer> {
@@ -632,7 +654,7 @@ export async function startUiServer(options: UiServerOptions = {}): Promise<UiSe
   const server = createServer((request, response) => {
     void (async () => {
       const host = request.headers.host ?? '';
-      if (host !== `${LOOPBACK}:${port}`) {
+      if (!isExpectedHost(host, port)) {
         sendJson(response, 403, { error: 'Invalid host.' });
         return;
       }
@@ -721,7 +743,7 @@ export async function startUiServer(options: UiServerOptions = {}): Promise<UiSe
           return;
         }
         port = address.port;
-        baseUrl = `http://${LOOPBACK}:${port}`;
+        baseUrl = loopbackOrigin(port);
         resolve();
       });
     });

@@ -61,6 +61,26 @@ export { type CreateClientOptions, createClientForProfile } from './factory.js';
 export { BcHttp, type BcHttpOptions, type BcResponse, type RequestOptions } from './http.js';
 export { parseMetadata } from './metadata.js';
 export {
+  buildFilterExpression,
+  buildGrid,
+  classifyCell,
+  companyItem,
+  entitySetItem,
+  type FilterField,
+  type FilterRow,
+  type GridCell,
+  type GridData,
+  type ItemPresentation,
+  literalFor,
+  operatorsFor,
+  pickColumns,
+  profileItem,
+  recordGrid,
+  routeItem,
+  schemaDocument,
+  sortProfiles,
+} from './presentation.js';
+export {
   FileSecretStore,
   KeychainSecretStore,
   type KeyringEntry,

@@ -39,6 +39,16 @@ jobs:
           # never touch a runner's real keychain
           NAVAPI_SECRET_BACKEND: file
 
+      - name: Test headless keyring fallback
+        if: runner.os == 'Linux'
+        run: pnpm --filter @navapi/core test -- --run profiles.test.ts
+        env:
+          NAVAPI_HEADLESS_KEYRING_TEST: "1"
+          NAVAPI_SECRET_BACKEND: ""
+          DBUS_SESSION_BUS_ADDRESS: ""
+          DISPLAY: ""
+          WAYLAND_DISPLAY: ""
+
       - name: Test Windows bootstrap
         if: runner.os == 'Windows'
         shell: powershell

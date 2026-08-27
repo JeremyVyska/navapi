@@ -6,4 +6,4 @@ export {
   routeItem,
   schemaDocument,
   sortProfiles,
-} from '@navapi/ui/shared';
+} from '@navapi/core';

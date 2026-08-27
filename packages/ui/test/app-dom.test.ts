@@ -141,6 +141,12 @@ describe('browser application DOM behavior', () => {
       expect(dom?.window.location.hash).toBe('');
       expect(dom?.window.sessionStorage.getItem('navapi.sessionToken')).toBe('session-token');
     });
+    const heartbeatCount = () => calls.filter((call) => call.path === '/api/heartbeat').length;
+    const beforeVisibilityChange = heartbeatCount();
+    dom.window.document.dispatchEvent(new dom.window.Event('visibilitychange'));
+    await waitFor(() => {
+      expect(heartbeatCount()).toBe(beforeVisibilityChange + 1);
+    });
     const sidebarStyle = dom.window.getComputedStyle(
       dom.window.document.querySelector('.side-scroll') as HTMLElement,
     );

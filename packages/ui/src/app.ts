@@ -407,7 +407,9 @@ export function renderAppHtml(nonce: string, version: string): string {
   el('cancelProfile').addEventListener('click',()=>el('profileDialog').close());
   el('testProfile').addEventListener('click',testProfile); el('saveProfile').addEventListener('click',saveProfile); el('deleteProfile').addEventListener('click',deleteProfile);
   el('closeData').addEventListener('click',()=>el('dataDialog').close()); el('closeDetail').addEventListener('click',()=>el('detailDialog').close());
-  setInterval(()=>api('/api/heartbeat',{method:'POST'}).catch(()=>{}),5000);
+  const heartbeat=()=>api('/api/heartbeat',{method:'POST'}).catch(()=>{});
+  setInterval(heartbeat,5000);
+  document.addEventListener('visibilitychange',heartbeat);
   loadState(launchProfile).catch(showError);
 })();
 </script>

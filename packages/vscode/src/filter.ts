@@ -4,4 +4,4 @@ export {
   type FilterRow,
   literalFor,
   operatorsFor,
-} from '@navapi/ui/shared';
+} from '@navapi/core';

@@ -172,6 +172,17 @@ describe('resolveSecretStore', () => {
       delete process.env.NAVAPI_SECRET_BACKEND;
     }
   });
+
+  it.runIf(process.env.NAVAPI_HEADLESS_KEYRING_TEST === '1')(
+    'falls back to the file store when the real keyring has no desktop session',
+    async () => {
+      const resolved = await resolveSecretStore(tmpDir);
+      await resolved.store.set('headless-smoke', 'headless-secret');
+
+      expect(await resolved.store.get('headless-smoke')).toBe('headless-secret');
+      expect(await new FileSecretStore(tmpDir).get('headless-smoke')).toBe('headless-secret');
+    },
+  );
 });
 
 describe('MetadataCache', () => {
