@@ -5,7 +5,7 @@ import { NavApiError, NotFoundError, PreconditionFailedError } from './errors.js
 import { BcHttp } from './http.js';
 import { parseMetadata } from './metadata.js';
 import { buildQueryString, formatKey, isGuid, type ODataQuery } from './query.js';
-import { parseRoutesResponse } from './routes.js';
+import { isApiRoutePath, parseRoutesResponse } from './routes.js';
 import type {
   ApiRoute,
   BcRecord,
@@ -183,7 +183,9 @@ export class BcClient {
 
   /** The cached collection tree (route → entity sets) without hitting the network. */
   async cachedMetadata(): Promise<CachedRouteMetadata[]> {
-    return this.cache.list(this.profile.name);
+    return (await this.cache.list(this.profile.name)).filter((route) =>
+      isApiRoutePath(route.routePath),
+    );
   }
 
   // ------------------------------------------------------------- companies
