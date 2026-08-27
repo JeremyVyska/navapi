@@ -26,13 +26,14 @@ async function waitFor(assertion: () => void): Promise<void> {
 
 describe('browser application DOM behavior', () => {
   it('renders profile and record data as text while authenticating every API call', async () => {
-    const calls: { path: string; authorization?: string }[] = [];
+    const calls: { path: string; authorization?: string; body?: string }[] = [];
     const malicious = '<img src=x onerror="globalThis.pwned=true">';
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const requestPath = String(input);
       calls.push({
         path: requestPath,
         authorization: new Headers(init?.headers).get('authorization') ?? undefined,
+        body: typeof init?.body === 'string' ? init.body : undefined,
       });
       if (requestPath === '/api/state') {
         return Response.json({
@@ -141,6 +142,25 @@ describe('browser application DOM behavior', () => {
       expect(dom?.window.document.querySelector('#grid td')?.textContent).toBe(malicious);
       expect(dom?.window.document.querySelectorAll('img')).toHaveLength(0);
     });
+    const queryPanel = dom.window.document.querySelector('.query') as HTMLElement;
+    expect(queryPanel.classList.contains('open')).toBe(false);
+    (dom.window.document.querySelector('#queryToggle') as HTMLButtonElement).click();
+    expect(queryPanel.classList.contains('open')).toBe(true);
+    expect(dom.window.document.querySelectorAll('#filterRows .query-row')).toHaveLength(1);
+    const filterField = dom.window.document.querySelector(
+      '#filterRows select',
+    ) as HTMLSelectElement;
+    filterField.value = 'displayName';
+    filterField.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    const filterValue = dom.window.document.querySelector('#filterRows input') as HTMLInputElement;
+    filterValue.value = "O'Brien";
+    filterValue.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    expect((dom.window.document.querySelector('#filterExpression') as HTMLInputElement).value).toBe(
+      "contains(displayName,'O''Brien')",
+    );
+    expect((dom.window.document.querySelector('#queryUrl') as HTMLInputElement).value).toBe(
+      'https://bc.test/customers',
+    );
     const queryCalls = calls.filter((call) => call.path === '/api/query').length;
     const expandedHeader = [...dom.window.document.querySelectorAll('#grid th')].find(
       (header) => header.textContent === 'expanded',

@@ -35,9 +35,13 @@ export function renderAppHtml(nonce: string, version: string): string {
     #title { font-size:14px; font-weight:650; } #status { color:var(--muted); margin-left:auto; max-width:40%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .hero { max-width:720px; margin:12vh auto; text-align:center; color:var(--muted); } .hero h1 { color:var(--text); font-size:28px; }
     .toolbar { display:flex; flex-wrap:wrap; gap:7px; align-items:center; margin-bottom:12px; } .toolbar .grow { flex:1; }
-    .query { border:1px solid var(--line); border-radius:7px; padding:10px; margin-bottom:12px; background:var(--panel); }
+    .query { display:none; border:1px solid var(--line); border-radius:7px; padding:10px; margin-bottom:12px; background:var(--panel); }
+    .query.open { display:block; }
     .query-row { display:grid; grid-template-columns:190px 130px minmax(180px,1fr) auto; gap:7px; margin:6px 0; }
-    .field-picks { display:flex; flex-wrap:wrap; gap:5px 12px; padding:7px 0; color:var(--muted); } .field-picks label { white-space:nowrap; }
+    .query-label { display:block; margin-top:9px; color:var(--muted); font-size:11px; }
+    .query-input { width:100%; margin-top:4px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+    .url-row { display:flex; gap:7px; margin-top:4px; } .url-row input { flex:1; }
+    .field-picks { display:flex; flex-wrap:wrap; gap:5px 12px; max-height:110px; overflow:auto; margin-top:4px; padding:7px; border:1px solid var(--line); border-radius:6px; color:var(--muted); } .field-picks label { white-space:nowrap; }
     .table-wrap { overflow:auto; border:1px solid var(--line); border-radius:7px; } table { border-collapse:collapse; min-width:100%; width:max-content; }
     th,td { padding:7px 10px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; max-width:360px; overflow:hidden; text-overflow:ellipsis; }
     th { position:sticky; top:0; background:var(--panel); color:var(--muted); cursor:pointer; z-index:1; } th.nonsort { cursor:default; } tr:hover td { background:var(--panel); }
@@ -108,7 +112,7 @@ export function renderAppHtml(nonce: string, version: string): string {
   if (fragmentToken) sessionStorage.setItem('navapi.sessionToken', fragmentToken);
   const token = fragmentToken || sessionStorage.getItem('navapi.sessionToken') || '';
   if (fragmentToken) history.replaceState(null, '', location.pathname);
-  const state = { profiles: [], defaultProfile: undefined, profile: undefined, routes: [], entity: undefined, route: undefined, records: [], cursor: undefined, query: {}, queryUrl: '', filterRows: [] };
+  const state = { profiles: [], defaultProfile: undefined, profile: undefined, routes: [], entity: undefined, route: undefined, records: [], cursor: undefined, query: {}, queryUrl: '', filterRows: [], manualFilter: false };
   const el = (id) => document.getElementById(id);
 
   async function api(path, options = {}) {
@@ -190,7 +194,7 @@ export function renderAppHtml(nonce: string, version: string): string {
   }
 
   function openEntity(route, entity) {
-    state.route = route; state.entity = entity; state.records = []; state.cursor = undefined; state.query = {}; state.filterRows = [];
+    state.route = route; state.entity = entity; state.records = []; state.cursor = undefined; state.query = {}; state.filterRows = []; state.manualFilter = false;
     el('title').textContent = entity.name + ' · ' + route + ' · ' + state.profile;
     renderEntity();
     runQuery();
@@ -199,21 +203,30 @@ export function renderAppHtml(nonce: string, version: string): string {
   function renderEntity() {
     const host = el('content'); host.replaceChildren();
     const toolbar = document.createElement('div'); toolbar.className = 'toolbar';
-    toolbar.append(button('Schema', showSchema), button('JSON', showJson), button('Copy query URL', copyQueryUrl), text('span', '', 'grow'));
+    const queryToggle = button('Query', toggleQuery); queryToggle.id = 'queryToggle';
+    toolbar.append(queryToggle, button('Schema', showSchema), button('Open as JSON', showJson), text('span', '', 'grow'));
     const meta = text('span', '', 'meta'); meta.id = 'recordMeta'; toolbar.append(meta);
     host.append(toolbar);
     const query = document.createElement('div'); query.className = 'query';
     const rowHost = document.createElement('div'); rowHost.id = 'filterRows'; query.append(rowHost);
     const actions = document.createElement('div'); actions.className = 'toolbar';
     const combinator = document.createElement('select'); combinator.id = 'combinator'; combinator.append(new Option('all (and)', 'and'), new Option('any (or)', 'or'));
-    actions.append(button('+ Condition', () => { state.filterRows.push({ field:state.entity.properties[0]?.name || '', type:state.entity.properties[0]?.type || 'Edm.String', op:'eq', value:'' }); renderFilterRows(); }), combinator, button('Apply query', runQuery, 'primary'), button('Clear', () => { state.filterRows=[]; state.query={}; renderFilterRows(); runQuery(); }));
+    combinator.addEventListener('change', () => { state.manualFilter=false; updateFilterPreview(); });
+    actions.append(button('+ Add condition', addFilterRow), text('span', 'Match', 'meta'), combinator, text('span', '', 'grow'), button('Apply', runQuery, 'primary'), button('Clear', clearQuery));
     query.append(actions);
+    const expression = document.createElement('input'); expression.id = 'filterExpression'; expression.className = 'query-input'; expression.spellcheck = false;
+    expression.addEventListener('input', () => { state.manualFilter = true; });
+    query.append(text('label', 'OData $filter (generated — edit to take over)', 'query-label'), expression);
     const picks = document.createElement('div'); picks.className = 'field-picks'; picks.id = 'fieldPicks';
     for (const field of state.entity.properties) {
       const label = document.createElement('label'); const check = document.createElement('input'); check.type='checkbox'; check.value=field.name;
       label.append(check, document.createTextNode(' ' + field.name)); picks.append(label);
     }
-    query.append(text('div', 'Fields ($select)', 'meta'), picks);
+    query.append(text('label', 'Fields ($select) — none checked = all fields', 'query-label'), picks);
+    const urlRow = document.createElement('div'); urlRow.className = 'url-row';
+    const queryUrl = document.createElement('input'); queryUrl.id = 'queryUrl'; queryUrl.className = 'query-input'; queryUrl.readOnly = true; queryUrl.spellcheck = false;
+    urlRow.append(queryUrl, button('Copy', copyQueryUrl));
+    query.append(text('label', 'Query URL', 'query-label'), urlRow);
     host.append(query);
     const grid = document.createElement('div'); grid.id='grid'; host.append(grid);
     renderFilterRows();
@@ -224,27 +237,56 @@ export function renderAppHtml(nonce: string, version: string): string {
     if (/^Edm\\.(Decimal|Double|Single|Int|Byte|SByte|Date|Time)/.test(type)) return ['eq','ne','gt','ge','lt','le'];
     return ['contains','eq','ne','startswith','endswith'];
   }
+  function filterExpression() {
+    return state.filterRows
+      .filter((row) => row.field && row.op && row.value.trim() !== '')
+      .map((row) => {
+        const raw = /^(Edm\\.(Boolean|Byte|Date|DateTimeOffset|Decimal|Double|Guid|Int16|Int32|Int64|SByte|Single|TimeOfDay))$/.test(row.type);
+        const value = raw ? row.value.trim() : "'" + row.value.trim().replaceAll("'", "''") + "'";
+        return ['contains','startswith','endswith'].includes(row.op) ? row.op + '(' + row.field + ',' + value + ')' : row.field + ' ' + row.op + ' ' + value;
+      })
+      .join(' ' + (el('combinator')?.value || 'and') + ' ');
+  }
+  function updateFilterPreview() {
+    if (!state.manualFilter) el('filterExpression').value = filterExpression();
+  }
+  function addFilterRow() {
+    const field = state.entity.properties[0];
+    if (!field) return;
+    state.filterRows.push({ field:field.name, type:field.type, op:operators(field.type)[0], value:'' });
+    state.manualFilter = false; renderFilterRows(); updateFilterPreview();
+  }
+  function toggleQuery() {
+    const panel = document.querySelector('.query'); panel.classList.toggle('open');
+    el('queryToggle').classList.toggle('primary', panel.classList.contains('open'));
+    if (panel.classList.contains('open') && !state.filterRows.length && !el('filterExpression').value) addFilterRow();
+  }
+  function clearQuery() {
+    state.filterRows=[]; state.query={}; state.manualFilter=false;
+    el('filterExpression').value=''; for (const pick of document.querySelectorAll('#fieldPicks input')) pick.checked=false;
+    renderFilterRows(); runQuery();
+  }
   function renderFilterRows() {
     const host = el('filterRows'); if (!host) return; host.replaceChildren();
     state.filterRows.forEach((filter, index) => {
       const row = document.createElement('div'); row.className='query-row';
       const field = document.createElement('select');
       for (const info of state.entity.properties) field.append(new Option(info.name, info.name));
-      field.value=filter.field; field.addEventListener('change', () => { const info=state.entity.properties.find((item)=>item.name===field.value); filter.field=field.value; filter.type=info?.type || 'Edm.String'; filter.op=operators(filter.type)[0]; renderFilterRows(); });
-      const op = document.createElement('select'); for (const name of operators(filter.type)) op.append(new Option(name,name)); op.value=filter.op; op.addEventListener('change',()=>filter.op=op.value);
-      const value = document.createElement('input'); value.value=filter.value; value.placeholder='Value'; value.addEventListener('input',()=>filter.value=value.value);
-      row.append(field,op,value,button('×',()=>{state.filterRows.splice(index,1);renderFilterRows();})); host.append(row);
+      field.value=filter.field; field.addEventListener('change', () => { const info=state.entity.properties.find((item)=>item.name===field.value); filter.field=field.value; filter.type=info?.type || 'Edm.String'; filter.op=operators(filter.type)[0]; filter.value=''; state.manualFilter=false; renderFilterRows(); updateFilterPreview(); });
+      const op = document.createElement('select'); for (const name of operators(filter.type)) op.append(new Option(name,name)); op.value=filter.op; op.addEventListener('change',()=>{filter.op=op.value;state.manualFilter=false;updateFilterPreview();});
+      const value = document.createElement('input'); value.value=filter.value; value.placeholder=filter.type.replace('Edm.',''); value.addEventListener('input',()=>{filter.value=value.value;state.manualFilter=false;updateFilterPreview();});
+      row.append(field,op,value,button('×',()=>{state.filterRows.splice(index,1);state.manualFilter=false;renderFilterRows();updateFilterPreview();})); host.append(row);
     });
   }
 
   async function runQuery(orderby) {
     if (!state.entity) return;
     const select = [...document.querySelectorAll('#fieldPicks input:checked')].map((node)=>node.value);
-    state.query = { filterRows:state.filterRows, combinator:el('combinator')?.value || 'and', select, orderby:orderby || state.query.orderby };
+    state.query = { filterRows:state.filterRows, combinator:el('combinator')?.value || 'and', filter:el('filterExpression')?.value || '', manualFilter:state.manualFilter, select, orderby:orderby || state.query.orderby };
     setStatus('Loading records…');
     try {
       const data = await api('/api/query', { method:'POST', body:{ profile:state.profile, route:state.route, entity:state.entity.name, ...state.query } });
-      state.records=data.records; state.cursor=data.cursor; state.query.orderby=data.orderby; state.queryUrl=data.queryUrl; renderGrid(data); setStatus('');
+      state.records=data.records; state.cursor=data.cursor; state.query.orderby=data.orderby; state.queryUrl=data.queryUrl; if(el('queryUrl'))el('queryUrl').value=data.queryUrl; renderGrid(data); setStatus('');
     } catch (error) { showError(error); el('grid').replaceChildren(text('div', error.message, 'error')); }
   }
 

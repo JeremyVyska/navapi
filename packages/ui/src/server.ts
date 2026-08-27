@@ -511,7 +511,10 @@ export async function startUiServer(options: UiServerOptions = {}): Promise<UiSe
       }
       const keys = schema.keys.length ? schema.keys : ['id'];
       const effectiveSelect = select.length ? [...new Set([...keys, ...select])] : undefined;
-      const filter = buildFilterExpression(rows, body.combinator === 'or' ? 'or' : 'and');
+      const filter =
+        body.manualFilter === true
+          ? optionalString(body.filter)
+          : buildFilterExpression(rows, body.combinator === 'or' ? 'or' : 'and');
       const bc = await client(profileName);
       const query = {
         count: true,

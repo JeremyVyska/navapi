@@ -260,6 +260,19 @@ describe('UI API flows', () => {
     expect(query.cursor).toBeTypeOf('string');
     expect(query.queryUrl).toContain("$filter=number%20eq%20'10000'");
 
+    const manualQuery = await request(server, '/api/query', {
+      method: 'POST',
+      body: JSON.stringify({
+        profile: 'demo',
+        route: 'v2.0',
+        entity: 'customers',
+        manualFilter: true,
+        filter: "startswith(displayName,'A')",
+      }),
+      headers: { 'content-type': 'application/json' },
+    }).then((response) => response.json());
+    expect(manualQuery.queryUrl).toContain("startswith(displayName%2C'A')");
+
     const next = await request(server, '/api/next', {
       method: 'POST',
       body: JSON.stringify({ cursor: query.cursor }),
