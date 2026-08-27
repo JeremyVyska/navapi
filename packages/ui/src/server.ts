@@ -134,6 +134,14 @@ export function loopbackOrigin(port: number): string {
   return new URL(`http://${LOOPBACK}:${port}`).origin;
 }
 
+export function parseRequestUrl(value: string | undefined, baseUrl: string): URL | undefined {
+  try {
+    return new URL(value ?? '/', baseUrl);
+  } catch {
+    return undefined;
+  }
+}
+
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
   let size = 0;
   const chunks: Buffer[] = [];
@@ -658,7 +666,11 @@ export async function startUiServer(options: UiServerOptions = {}): Promise<UiSe
         sendJson(response, 403, { error: 'Invalid host.' });
         return;
       }
-      const requestUrl = new URL(request.url ?? '/', baseUrl);
+      const requestUrl = parseRequestUrl(request.url, baseUrl);
+      if (!requestUrl) {
+        sendJson(response, 400, { error: 'Invalid request URL.' });
+        return;
+      }
       if (request.method === 'GET' && requestUrl.pathname === '/') {
         const nonce = randomBytes(18).toString('base64url');
         response.writeHead(200, {

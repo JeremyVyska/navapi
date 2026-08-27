@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startUiServer, type UiServer } from '../src/index.js';
-import { isExpectedHost, loopbackOrigin } from '../src/server.js';
+import { isExpectedHost, loopbackOrigin, parseRequestUrl } from '../src/server.js';
 
 const EDMX = `<?xml version="1.0" encoding="utf-8"?>
 <edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
@@ -74,6 +74,11 @@ describe('UI server security and lifecycle', () => {
     expect(isExpectedHost('127.0.0.1@attacker.example', 80)).toBe(false);
     expect(loopbackOrigin(80)).toBe('http://127.0.0.1');
     expect(loopbackOrigin(8080)).toBe('http://127.0.0.1:8080');
+  });
+
+  it('rejects malformed request URLs without throwing from the server handler', () => {
+    expect(parseRequestUrl('/api/state', 'http://127.0.0.1:8080')?.pathname).toBe('/api/state');
+    expect(parseRequestUrl('http://[', 'http://127.0.0.1:8080')).toBeUndefined();
   });
 
   it('keeps the bearer token out of HTML and requires it for API requests', async () => {
