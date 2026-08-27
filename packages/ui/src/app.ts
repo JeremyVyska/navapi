@@ -27,14 +27,15 @@ export function renderAppHtml(nonce: string, version: string): string {
     .brand { font-size:17px; font-weight:700; letter-spacing:.2px; } .brand span { color:var(--accent); }
     .version { color:var(--muted); font-size:11px; margin-left:auto; }
     .side-scroll { flex:1 1 0; min-height:0; overflow:hidden; display:flex; flex-direction:column; }
-    .section { flex:0 1 auto; min-height:38px; max-height:30%; display:flex; flex-direction:column; border-bottom:1px solid var(--line); }
+    .section { flex:0 1 auto; min-height:38px; max-height:30%; display:flex; flex-direction:column; border-bottom:2px solid var(--line); }
     .section.endpoint-section { flex:1 1 0; max-height:none; }
     .section.collapsed { flex:0 0 38px; }
     .section.context-section.collapsed { flex-basis:54px; }
-    .section-head { flex:0 0 38px; display:flex; align-items:center; gap:6px; padding:5px 12px; text-transform:uppercase; letter-spacing:.08em; font-size:11px; color:var(--muted); font-weight:700; }
+    .section-head { flex:0 0 38px; display:flex; align-items:center; gap:6px; padding:5px 12px; background:var(--panel2); text-transform:uppercase; letter-spacing:.08em; font-size:11px; color:var(--muted); font-weight:700; }
     .section-head.has-context { flex-basis:54px; }
     .section-head > button:not(.section-toggle) { padding:2px 7px; }
-    .section-toggle { min-width:0; display:flex; align-items:center; gap:8px; border:0; background:transparent; padding:3px 0; color:inherit; font-weight:inherit; text-transform:inherit; letter-spacing:inherit; }
+    .section-toggle { min-width:0; display:flex; align-items:center; gap:8px; border:0; background:transparent; padding:3px 0; color:var(--text); font-weight:inherit; text-transform:inherit; letter-spacing:inherit; }
+    .section-toggle:hover { color:white; border-color:transparent; }
     .section-heading { min-width:0; flex:1; overflow:hidden; }
     .section-heading .section-toggle { width:100%; white-space:nowrap; }
     .section-context { display:block; min-width:0; padding-left:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-transform:none; letter-spacing:normal; font-weight:400; }
