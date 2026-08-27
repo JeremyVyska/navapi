@@ -51,7 +51,7 @@ try {
     @'
 @echo %*>>"%NAVAPI_TEST_NPM_LOG%"
 @set "prefix="
-@:parse
+:parse
 @if "%~1"=="" goto install
 @if "%~1"=="--prefix" (
   @set "prefix=%~2"
@@ -59,7 +59,7 @@ try {
 )
 @shift
 @goto parse
-@:install
+:install
 @if "%NAVAPI_TEST_NPM_FAIL%"=="1" (
   @if not exist "%prefix%" mkdir "%prefix%"
   @echo @exit /b 99>"%prefix%\navapi.cmd"

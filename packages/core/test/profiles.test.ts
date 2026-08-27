@@ -11,6 +11,7 @@ import {
   ProfileStore,
   resolveSecretStore,
 } from '../src/index.js';
+import { isHeadlessLinux } from '../src/profiles.js';
 
 let tmpDir: string;
 
@@ -171,6 +172,13 @@ describe('resolveSecretStore', () => {
     } finally {
       delete process.env.NAVAPI_SECRET_BACKEND;
     }
+  });
+
+  it('detects Linux sessions without a desktop D-Bus', () => {
+    expect(isHeadlessLinux('linux', undefined)).toBe(true);
+    expect(isHeadlessLinux('linux', '')).toBe(true);
+    expect(isHeadlessLinux('linux', 'unix:path=/run/user/1000/bus')).toBe(false);
+    expect(isHeadlessLinux('win32', undefined)).toBe(false);
   });
 
   it.runIf(process.env.NAVAPI_HEADLESS_KEYRING_TEST === '1')(
