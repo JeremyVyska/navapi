@@ -418,9 +418,12 @@ export async function startUiServer(options: UiServerOptions = {}): Promise<UiSe
         preferredProfile = name;
       } else {
         const body = await readJson(request);
-        const company = requiredString(body.company, 'Company');
+        const companyIdentifier = requiredString(body.company, 'Company');
         const profile = await profileStore.get(name);
-        await profileStore.upsert({ ...profile, company });
+        const companies = await (await client(name)).listCompanies();
+        const company = findCompany(companies, companyIdentifier);
+        if (!company) throw new ApiError(400, 'The selected company is no longer available.');
+        await profileStore.upsert({ ...profile, company: companyLabel(company) });
       }
       sendJson(response, 200, { ok: true });
       return;

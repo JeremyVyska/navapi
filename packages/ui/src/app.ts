@@ -30,7 +30,16 @@ export function renderAppHtml(nonce: string, version: string): string {
     .section-head button { margin-left:auto; padding:2px 7px; }
     .item { display:block; width:100%; border:0; background:transparent; text-align:left; padding:7px 8px; border-radius:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .item:hover,.item.active { background:var(--panel2); } .item small { display:block; color:var(--muted); overflow:hidden; text-overflow:ellipsis; }
-    .route { margin:7px 0 3px; color:var(--muted); font-weight:600; padding-left:8px; } .entity { padding-left:18px; }
+    .route-toggle,.entity { display:flex; align-items:center; gap:7px; }
+    .route-toggle { margin-top:2px; font-weight:600; }
+    .route-toggle .label,.entity .label { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+    .route-count { margin-left:auto; color:var(--muted); font-size:11px; font-weight:400; }
+    .chevron { width:7px; height:7px; flex:0 0 auto; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(-45deg); transition:transform .12s ease; }
+    .route-toggle[aria-expanded="true"] .chevron { transform:rotate(45deg); }
+    .tree-icon { width:16px; height:16px; flex:0 0 auto; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+    .route-toggle .tree-icon { color:var(--muted); }
+    .entity { padding-left:31px; } .entity .tree-icon { color:#d29922; }
+    .route-children[hidden] { display:none; }
     main { min-width:0; display:flex; flex-direction:column; } #mainHead { flex:0 0 auto; } #content { flex:1; min-height:0; overflow:auto; padding:16px; }
     #title { font-size:14px; font-weight:650; } #status { color:var(--muted); margin-left:auto; max-width:40%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .hero { max-width:720px; margin:12vh auto; text-align:center; color:var(--muted); } .hero h1 { color:var(--text); font-size:28px; }
@@ -129,6 +138,12 @@ export function renderAppHtml(nonce: string, version: string): string {
   function setStatus(text, bad = false) { el('status').textContent = text || ''; el('status').className = bad ? 'error' : ''; }
   function text(tag, value, cls) { const node = document.createElement(tag); node.textContent = String(value ?? ''); if (cls) node.className = cls; return node; }
   function button(label, action, cls) { const node = text('button', label, cls); node.addEventListener('click', action); return node; }
+  function treeIcon(kind) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg','svg'); svg.setAttribute('viewBox','0 0 20 20'); svg.setAttribute('aria-hidden','true'); svg.classList.add('tree-icon');
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d', kind === 'route' ? 'M7 2v5m6-5v5M5 7h10v2a5 5 0 0 1-4 4.58V18H9v-4.42A5 5 0 0 1 5 9V7Z' : 'M6 4v12m0-9h5m-5 6h5m0-8v4m0 2v4m0-6h4m-4 6h4');
+    svg.append(path); return svg;
+  }
   function showError(error) { setStatus(error instanceof Error ? error.message : String(error), true); }
 
   async function loadState(preferred) {
@@ -179,13 +194,20 @@ export function renderAppHtml(nonce: string, version: string): string {
       const data = await api('/api/discovery?profile=' + encodeURIComponent(state.profile) + '&refresh=' + refresh);
       state.routes = data.routes; host.replaceChildren();
       for (const route of data.routes) {
-        host.appendChild(text('div', route.routePath, 'route'));
+        const group = document.createElement('div'); group.className='route-node';
+        const children = document.createElement('div'); children.className='route-children'; children.hidden=true;
+        const toggle = document.createElement('button'); toggle.className='item route-toggle'; toggle.type='button'; toggle.setAttribute('aria-expanded','false');
+        const chevron = text('span','','chevron');
+        toggle.append(chevron,treeIcon('route'),text('span',route.routePath,'label'),text('span',route.metadata.entitySets.length + ' entity sets','route-count'));
+        toggle.addEventListener('click',()=>{const expanded=toggle.getAttribute('aria-expanded')==='true';toggle.setAttribute('aria-expanded',String(!expanded));children.hidden=expanded;});
         for (const entity of route.metadata.entitySets) {
-          const node = text('button', entity.name, 'item entity');
+          const node = document.createElement('button'); node.className='item entity'; node.type='button';
+          node.append(treeIcon('entity'),text('span',entity.name,'label'));
           node.title = entity.entityType;
           node.addEventListener('click', () => openEntity(route.routePath, entity));
-          host.appendChild(node);
+          children.appendChild(node);
         }
+        group.append(toggle,children); host.appendChild(group);
       }
       if (data.warning) host.prepend(text('div', data.warning, 'meta'));
       for (const failure of data.errors || []) host.appendChild(text('div', failure.route + ': ' + failure.error, 'error'));

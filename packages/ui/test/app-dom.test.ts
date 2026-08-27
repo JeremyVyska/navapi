@@ -134,7 +134,22 @@ describe('browser application DOM behavior', () => {
       expect(dom?.window.sessionStorage.getItem('navapi.sessionToken')).toBe('session-token');
     });
 
-    (dom.window.document.querySelector('#endpoints .entity') as HTMLButtonElement).dispatchEvent(
+    const routeToggle = dom.window.document.querySelector(
+      '#endpoints .route-toggle',
+    ) as HTMLButtonElement;
+    const routeChildren = dom.window.document.querySelector(
+      '#endpoints .route-children',
+    ) as HTMLElement;
+    expect(routeToggle.getAttribute('aria-expanded')).toBe('false');
+    expect(routeToggle.textContent).toContain('1 entity sets');
+    expect(routeChildren.hidden).toBe(true);
+    expect(routeToggle.querySelector('.tree-icon')).not.toBeNull();
+    routeToggle.click();
+    expect(routeToggle.getAttribute('aria-expanded')).toBe('true');
+    expect(routeChildren.hidden).toBe(false);
+    expect(routeChildren.querySelector('.entity .tree-icon')).not.toBeNull();
+
+    (routeChildren.querySelector('.entity') as HTMLButtonElement).dispatchEvent(
       new dom.window.MouseEvent('click', { bubbles: true }),
     );
 

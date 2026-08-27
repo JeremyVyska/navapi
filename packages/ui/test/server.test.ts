@@ -238,6 +238,15 @@ describe('UI API flows', () => {
       isDefault: true,
     });
 
+    const selectCompany = await request(server, '/api/profiles/demo/company', {
+      method: 'POST',
+      body: JSON.stringify({ company: '00000000-0000-0000-0000-000000000001' }),
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(selectCompany.status).toBe(200);
+    const state = await request(server, '/api/state').then((response) => response.json());
+    expect(state.profiles[0].company).toBe('CRONUS International Ltd.');
+
     const discovery = await request(server, '/api/discovery?profile=demo&refresh=true').then(
       (response) => response.json(),
     );
