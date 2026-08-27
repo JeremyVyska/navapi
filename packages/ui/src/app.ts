@@ -212,7 +212,7 @@ export function renderAppHtml(nonce: string, version: string): string {
     const actions = document.createElement('div'); actions.className = 'toolbar';
     const combinator = document.createElement('select'); combinator.id = 'combinator'; combinator.append(new Option('all (and)', 'and'), new Option('any (or)', 'or'));
     combinator.addEventListener('change', () => { state.manualFilter=false; updateFilterPreview(); });
-    actions.append(button('+ Add condition', addFilterRow), text('span', 'Match', 'meta'), combinator, text('span', '', 'grow'), button('Apply', runQuery, 'primary'), button('Clear', clearQuery));
+    actions.append(button('+ Add condition', addFilterRow), text('span', 'Match', 'meta'), combinator, text('span', '', 'grow'), button('Apply', () => runQuery(), 'primary'), button('Clear', clearQuery));
     query.append(actions);
     const expression = document.createElement('input'); expression.id = 'filterExpression'; expression.className = 'query-input'; expression.spellcheck = false;
     expression.addEventListener('input', () => { state.manualFilter = true; });

@@ -161,6 +161,12 @@ describe('browser application DOM behavior', () => {
     expect((dom.window.document.querySelector('#queryUrl') as HTMLInputElement).value).toBe(
       'https://bc.test/customers',
     );
+    (dom.window.document.querySelector('.query button.primary') as HTMLButtonElement).click();
+    await waitFor(() => {
+      const lastQuery = [...calls].reverse().find((call) => call.path === '/api/query');
+      expect(lastQuery?.body).toBeTruthy();
+      expect(JSON.parse(lastQuery?.body ?? '{}').orderby).toBeUndefined();
+    });
     const queryCalls = calls.filter((call) => call.path === '/api/query').length;
     const expandedHeader = [...dom.window.document.querySelectorAll('#grid th')].find(
       (header) => header.textContent === 'expanded',
