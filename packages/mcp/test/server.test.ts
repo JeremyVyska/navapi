@@ -237,13 +237,28 @@ describe('navapi MCP server', () => {
     const data = parseText(await client.callTool({ name: 'list_entities', arguments: {} }));
     expect(data.routes).toHaveLength(1);
     expect(data.routes[0].route).toBe('v2.0');
-    expect(data.routes[0].entitySets).toEqual([{ name: 'customers', keys: ['id'], actions: [] }]);
+    expect(data.routes[0].entitySets).toEqual([
+      { name: 'customers', entityType: 'Microsoft.NAV.customer', keys: ['id'], actions: [] },
+    ]);
 
     // Second call comes from cache: no additional $metadata fetches.
     const metadataFetches = () => recorded.filter((r) => r.url.includes('$metadata')).length;
     const before = metadataFetches();
     await client.callTool({ name: 'list_entities', arguments: {} });
     expect(metadataFetches()).toBe(before);
+  });
+
+  it('list_entities narrows to a search term and drops routes with no match', async () => {
+    const client = await connectedClient();
+    const hit = parseText(
+      await client.callTool({ name: 'list_entities', arguments: { search: 'CUSTOM' } }),
+    );
+    expect(hit.routes[0].entitySets.map((s: any) => s.name)).toEqual(['customers']);
+
+    const miss = parseText(
+      await client.callTool({ name: 'list_entities', arguments: { search: 'nosuchthing' } }),
+    );
+    expect(miss.routes).toEqual([]);
   });
 
   it('get_entity_schema returns properties and keys', async () => {

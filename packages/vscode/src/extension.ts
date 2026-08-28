@@ -13,6 +13,7 @@ import { hasBraiderRouteCached, loadBraiderCache } from './braider-cache.js';
 import { BraiderPanel } from './braider-panel.js';
 import { braiderSchemaDocument } from './braider-view.js';
 import { saveCompanies } from './companies-cache.js';
+import { endpointPickItems } from './endpoint-search.js';
 import { mcpServerEnv } from './mcp-config.js';
 import { schemaDocument } from './model.js';
 import { ProfileFormPanel } from './profile-form.js';
@@ -25,6 +26,7 @@ import {
   type CompanyNode,
   EndpointsProvider,
   type EntitySetNode,
+  metadataCache,
   type ProfileNode,
   ProfilesProvider,
 } from './tree.js';
@@ -127,6 +129,31 @@ async function discoverFlow(ui: Ui, node?: ProfileNode): Promise<void> {
       }
     },
   );
+}
+
+/**
+ * Quick pick over the cached collection tree. Cache only: an environment can
+ * expose hundreds of entity sets across a dozen routes, and the point is to
+ * jump to one without expanding routes by hand.
+ */
+async function searchEndpointsFlow(): Promise<void> {
+  const profileName = await resolveProfileName();
+  const items = endpointPickItems(profileName, await metadataCache().list(profileName));
+  if (!items.length) {
+    const discover = 'Discover';
+    const choice = await vscode.window.showInformationMessage(
+      `navapi: no endpoints cached for "${profileName}" yet.`,
+      discover,
+    );
+    if (choice === discover) await vscode.commands.executeCommand('navapi.discover');
+    return;
+  }
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: `Search ${items.length} entity sets in ${profileName}…`,
+    matchOnDescription: true,
+    matchOnDetail: true,
+  });
+  if (picked) await openEntityFlow(picked.node);
 }
 
 async function openEntityFlow(node: EntitySetNode): Promise<void> {
@@ -441,6 +468,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(
       'navapi.removeProfile',
       command((node: ProfileNode) => removeProfileFlow(ui, node)),
+    ),
+    vscode.commands.registerCommand(
+      'navapi.searchEndpoints',
+      command(() => searchEndpointsFlow()),
     ),
     vscode.commands.registerCommand(
       'navapi.openEntity',
