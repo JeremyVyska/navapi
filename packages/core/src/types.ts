@@ -1,11 +1,32 @@
+/**
+ * How a profile authenticates. A discriminated union rather than flat fields,
+ * so a new method adds one variant instead of adding optional properties to
+ * every profile that will never use them.
+ */
+export type ProfileAuth =
+  | {
+      type: 'clientSecret';
+      /** App registration client ID. The secret itself lives in the secret store. */
+      clientId: string;
+    }
+  | {
+      type: 'azureCli';
+      /**
+       * Which az identity to authenticate as, as a username or account id.
+       * Only needed when az holds more than one; otherwise az uses whichever
+       * account it is currently signed in as.
+       */
+      account?: string;
+    };
+
 /** A named profile pinned to exactly one Business Central environment. */
 export interface ProfileConfig {
   /** Profile name, e.g. `contoso-prod`. */
   name: string;
   /** Entra ID (Azure AD) tenant ID or domain. */
   tenantId: string;
-  /** App registration client ID used for client-credentials auth. */
-  clientId: string;
+  /** How this profile authenticates. */
+  auth: ProfileAuth;
   /** BC environment name, e.g. `Production` or `Sandbox-UAT`. */
   environment: string;
   /** Default company (display name, name, or GUID). Optional; can be passed per call. */
@@ -13,6 +34,17 @@ export interface ProfileConfig {
   /** Override for the BC API host. Defaults to https://api.businesscentral.dynamics.com */
   baseUrl?: string;
 }
+
+/**
+ * A profile as it may appear on disk. Files written before `auth` existed
+ * carry `clientId` at the top level; {@link ProfileStore} normalizes them on
+ * read, so nothing above this layer sees the older shape.
+ */
+export type StoredProfile = Omit<ProfileConfig, 'auth'> & {
+  auth?: ProfileAuth;
+  /** Legacy: client-credentials profiles written before `auth`. */
+  clientId?: string;
+};
 
 /** A record returned by a BC OData endpoint. */
 export type BcRecord = Record<string, unknown> & {

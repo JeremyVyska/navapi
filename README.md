@@ -55,6 +55,58 @@ navapi discover                    # every route + entity on this env, cached
 navapi discover customer --schema  # show the shape
 ```
 
+### No app registration: Azure CLI auth
+
+If you are already signed in with `az login`, skip the app registration entirely. `--auth azureCli` gets its token from `az account get-access-token`, so there is no client ID and no secret to store:
+
+```bash
+az login --tenant $TENANT_ID --scope https://api.businesscentral.dynamics.com/.default
+
+navapi profile add contoso-dev \
+  --tenant $TENANT_ID \
+  --environment Sandbox-UAT \
+  --auth azureCli
+```
+
+The profile then works exactly like any other, in the CLI, the VS Code extension, and the MCP server. Client-credentials auth stays the default, and existing profiles are untouched.
+
+Reaching a customer's tenant works as long as one of the identities `az` holds has access to it — through delegated admin (GDAP), a guest invite, or an account in that tenant.
+
+A profile records which identity it was created with, so a later `az login` as somebody else can't change who it authenticates as. With one identity that happens without asking; with several, `profile add` asks on a terminal:
+
+```bash
+navapi profile az-accounts     # the identities az is signed in as
+navapi profile add customer-x --tenant $CUSTOMER_TENANT --environment Production --auth azureCli
+#   az is signed in as more than one identity:
+#    0) do not pin — follow whichever identity az is signed in as
+#    1) me@example.com — signed in now
+#    2) me@other.com
+#   Select identity [0-2]:
+```
+
+Pass `--az-account me@example.com` to skip the question, in scripts or when you already know. The VS Code profile form offers the same list as a dropdown.
+
+An identity reaches a tenant in one of two ways, and they behave differently:
+
+- **`az` holds an account in that tenant.** navapi selects it directly, whichever identity you are signed in as at the time.
+- **Delegated admin (GDAP) or a guest invite.** No account exists in the tenant, and `az` can only do this as the identity it is *currently* signed in as. So a profile pinned to a different identity is refused rather than quietly authenticating as the wrong one.
+
+If neither applies yet, sign that identity in for the tenant once — which turns it into the first case:
+
+```bash
+az login --tenant $CUSTOMER_TENANT --allow-no-subscriptions --scope https://api.businesscentral.dynamics.com/.default
+```
+
+`--allow-no-subscriptions` matters — a tenant that only has Business Central usually has no Azure subscription, and `az login` fails without it. navapi puts this exact command in the error when it hits that case, so there is nothing to look up.
+
+**This authenticates as you.** An az-cli token is a *delegated* token: Business Central sees a user, not an application. That means:
+
+- You need a BC license and a permission set in that environment. An app registration does not.
+- What you can read and write can differ from what the same environment's app-registration profile can, including row-level permissions.
+- Some tenants require admin consent for the Azure CLI's first-party app against the BC API before any of this works.
+
+So it is the right choice for exploring an environment as yourself, and the wrong one for an unattended integration — use client credentials there.
+
 Or from an agent, via MCP:
 
 ```jsonc
@@ -105,7 +157,7 @@ navapi/
 1. **Discovery over documentation.** Hit `$metadata`, cache it, autocomplete from it. Don't make users read Microsoft Learn to find the entity name.
 2. **Agent-first output.** Every command supports `--json` with a stable, semver'd schema. `isTTY` detection means humans get pretty output and pipes get JSON automatically.
 3. **ETags are not the user's problem.** `patch` and `delete` transparently GET-then-modify with `If-Match`. Concurrency safety by default.
-4. **Profiles, not env vars.** Named profiles for every customer × environment combo. Secrets go to the **OS keychain** (Credential Manager / Keychain / libsecret via `@napi-rs/keyring`), with a file fallback on platforms without one — existing file secrets migrate to the keychain automatically on first use. `navapi secrets status` shows where every secret lives; `NAVAPI_CLIENT_SECRET` covers CI and `NAVAPI_SECRET_BACKEND=file` opts out.
+4. **Profiles, not env vars.** Named profiles for every customer × environment combo. Secrets go to the **OS keychain** (Credential Manager / Keychain / libsecret via `@napi-rs/keyring`), with a file fallback on platforms without one — existing file secrets migrate to the keychain automatically on first use. `navapi secrets status` shows where every secret lives; `NAVAPI_CLIENT_SECRET` covers CI and `NAVAPI_SECRET_BACKEND=file` opts out. Profiles created with `--auth azureCli` have no secret to store at all.
 5. **Batching is a first-class citizen.** `$batch` support from day one — bulk ops are where BC APIs get slow.
 6. **Same brain, four faces.** Any capability added to `core` is instantly available to CLI, VS Code, and MCP.
 

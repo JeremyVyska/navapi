@@ -1,10 +1,140 @@
 import path from 'node:path';
-import { MetadataCache, NavApiError } from '@navapi/core';
+import {
+  activeAzureCliAccount,
+  listAzureCliAccounts,
+  MetadataCache,
+  NavApiError,
+} from '@navapi/core';
 import type { Command } from 'commander';
 import pc from 'picocolors';
 import { configDir, createClient, profileStore, secretStore } from '../context.js';
 import { emitJson, printTable, wantJson } from '../output.js';
-import { promptSecret } from '../prompt.js';
+import { ask, promptSecret } from '../prompt.js';
+
+type AuthType = 'clientSecret' | 'azureCli';
+
+/**
+ * Accepts the spellings people actually type. `clientSecret` rather than
+ * `clientCredentials` because a certificate uses the client-credentials grant
+ * too — the distinction that matters here is which credential, not which
+ * grant. `clientCredentials` stays accepted as an alias.
+ */
+export function parseAuthType(value: string): AuthType {
+  const key = value.toLowerCase().replace(/[^a-z]/g, '');
+  if (key === 'azurecli' || key === 'azcli' || key === 'az') return 'azureCli';
+  if (key === 'clientsecret' || key === 'secret') return 'clientSecret';
+  if (key === 'clientcredentials' || key === 'clientcredential') return 'clientSecret';
+  throw new NavApiError(`Unknown --auth value "${value}". Use clientSecret (default) or azureCli.`);
+}
+
+const FLAG_NAMES: Record<string, string> = {
+  clientId: '--client-id',
+  secret: '--secret',
+  azAccount: '--az-account',
+};
+
+/**
+ * Flags belonging to the other strategy are dropped on save rather than
+ * applied, which is worth an error and not silence: appending `--auth
+ * azureCli` to an existing `profile add` command would otherwise discard the
+ * client ID, leaving the retained client secret with nothing to pair it with.
+ */
+export function strayAuthFlags(
+  authType: AuthType,
+  opts: Record<string, unknown>,
+): string[] | undefined {
+  const irrelevant = authType === 'azureCli' ? ['clientId', 'secret'] : ['azAccount'];
+  const stray = irrelevant.filter((flag) => opts[flag]).map((flag) => FLAG_NAMES[flag]);
+  return stray.length ? stray : undefined;
+}
+
+export interface AzIdentity {
+  user: string;
+  /** Tenants az holds an account in. An identity can reach others besides these. */
+  tenants: string[];
+  /** The account az is signed in as — the only one usable for a tenant it has no account in. */
+  current: boolean;
+}
+
+/**
+ * What `--az-account` selects is an identity, not one tenant's account: the
+ * same identity often reaches tenants az holds no account in, through
+ * delegated admin or a guest invite. So collapse az's accounts by username.
+ */
+async function azIdentities(): Promise<AzIdentity[]> {
+  const [accounts, active] = await Promise.all([
+    listAzureCliAccounts(),
+    // An unusable active account — an expired refresh token, a transient az
+    // error — costs only the "signed in now" marker. It must not hide the
+    // identities az does know, or profile add would save an unpinned profile.
+    activeAzureCliAccount().catch(() => undefined),
+  ]);
+  const byUser = new Map<string, AzIdentity>();
+  const seed = (user: string): AzIdentity => {
+    const existing = byUser.get(user);
+    if (existing) return existing;
+    const created: AzIdentity = { user, tenants: [], current: false };
+    byUser.set(user, created);
+    return created;
+  };
+  for (const a of accounts) {
+    const entry = seed(a.user);
+    if (!entry.tenants.includes(a.tenantId)) entry.tenants.push(a.tenantId);
+  }
+  if (active) seed(active.user).current = true;
+  return [...byUser.values()].sort(
+    (a, b) => Number(b.current) - Number(a.current) || a.user.localeCompare(b.user),
+  );
+}
+
+/**
+ * Resolves which az identity the profile should pin.
+ *
+ * Pinning is the default even when there is only one identity: leaving it
+ * unpinned means a later `az login` as somebody else silently changes who the
+ * profile authenticates as, which is the thing the resolution code goes out of
+ * its way to prevent once an identity *is* pinned. One identity needs no
+ * question, so it is pinned without asking; more than one is a real choice.
+ * Option 0 stays available for deliberately following whichever identity az is
+ * signed in as.
+ *
+ * az being absent or signed out is not a reason to fail `profile add` — the
+ * profile is simply saved unpinned.
+ */
+export function resolveIdentityChoice(
+  identities: AzIdentity[],
+  canPrompt: boolean,
+): { pin?: string; prompt: boolean } {
+  if (!identities.length) return { prompt: false };
+  if (identities.length === 1) return { pin: identities[0].user, prompt: false };
+  return { prompt: canPrompt };
+}
+
+async function pickAzAccount(): Promise<string | undefined> {
+  let identities: AzIdentity[];
+  try {
+    identities = await azIdentities();
+  } catch {
+    return undefined;
+  }
+  const canPrompt = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  const choice = resolveIdentityChoice(identities, canPrompt);
+  if (!choice.prompt) return choice.pin;
+
+  console.log(pc.dim('az is signed in as more than one identity:'));
+  console.log(
+    `${pc.bold(' 0')}) ${pc.dim('do not pin — follow whichever identity az is signed in as')}`,
+  );
+  identities.forEach((a, i) => {
+    const mark = a.current ? pc.dim('— signed in now') : '';
+    console.log(`${pc.bold(String(i + 1).padStart(2))}) ${a.user} ${mark}`);
+  });
+  const answer = await ask(`Select identity [0-${identities.length}]: `);
+  if (!answer || answer === '0') return undefined;
+  const picked = identities[Number.parseInt(answer, 10) - 1];
+  if (!picked) throw new NavApiError(`No identity at position "${answer}".`);
+  return picked.user;
+}
 
 export function registerProfile(program: Command): void {
   const profile = program
@@ -16,40 +146,99 @@ export function registerProfile(program: Command): void {
     .command('add <name>')
     .description('Add or update a profile pinned to a BC environment')
     .requiredOption('--tenant <tenantId>', 'Entra ID tenant ID or domain')
-    .requiredOption('--client-id <clientId>', 'App registration client ID')
     .requiredOption('--environment <environment>', 'BC environment name (e.g. Production)')
+    .option('--auth <type>', 'Auth strategy: clientSecret (default) or azureCli')
+    .option('--client-id <clientId>', 'App registration client ID (client-credentials auth)')
+    .option(
+      '--az-account <userOrId>',
+      'Which az identity to use, if az holds more than one (azureCli auth)',
+    )
     .option('--company <company>', 'Default company (name, displayName, or GUID)')
     .option('--secret <secret>', 'Client secret (omit to be prompted, or set NAVAPI_CLIENT_SECRET)')
     .option('--base-url <url>', 'Override the BC API host')
     .option('--default', 'Make this the default profile')
     .action(async (name: string, opts) => {
-      let secret: string | undefined = opts.secret ?? process.env.NAVAPI_CLIENT_SECRET ?? undefined;
-      if (!secret) {
-        if (!process.stdin.isTTY) {
-          throw new NavApiError(
-            'No secret provided. Use --secret or the NAVAPI_CLIENT_SECRET env var.',
-          );
-        }
-        secret = await promptSecret(`Client secret for ${name}: `);
+      const authType = opts.auth ? parseAuthType(opts.auth) : 'clientSecret';
+      const azureCli = authType === 'azureCli';
+
+      const stray = strayAuthFlags(authType, opts);
+      if (stray) {
+        throw new NavApiError(
+          `${stray.join(' and ')} ${stray.length > 1 ? 'are' : 'is'} not used with --auth ${authType}, ` +
+            `and would be dropped. Remove ${stray.length > 1 ? 'them' : 'it'} to save this profile as ${authType}.`,
+        );
       }
-      if (!secret) throw new NavApiError('Empty secret; profile not saved.');
+
+      // Commander can't make --client-id conditionally required, so it's an
+      // optional flag the client-credentials path enforces by hand.
+      if (!azureCli && !opts.clientId) {
+        throw new NavApiError(
+          "required option '--client-id <clientId>' not specified " +
+            '(or use --auth azureCli, which needs no app registration).',
+        );
+      }
+
+      const azAccount = azureCli && !opts.azAccount ? await pickAzAccount() : opts.azAccount;
+
+      let secret: string | undefined;
+      if (!azureCli) {
+        secret = opts.secret ?? process.env.NAVAPI_CLIENT_SECRET ?? undefined;
+        if (!secret) {
+          if (!process.stdin.isTTY) {
+            throw new NavApiError(
+              'No secret provided. Use --secret or the NAVAPI_CLIENT_SECRET env var.',
+            );
+          }
+          secret = await promptSecret(`Client secret for ${name}: `);
+        }
+        if (!secret) throw new NavApiError('Empty secret; profile not saved.');
+      }
+
+      // Whether this replaces a secret-backed profile decides if there is a
+      // now-unused secret to clear out below.
+      const replaced = await profileStore()
+        .get(name)
+        .catch(() => undefined);
 
       await profileStore().upsert(
         {
           name,
           tenantId: opts.tenant,
-          clientId: opts.clientId,
+          auth: azureCli
+            ? { type: 'azureCli', account: azAccount || undefined }
+            : { type: 'clientSecret', clientId: opts.clientId },
           environment: opts.environment,
           company: opts.company,
           baseUrl: opts.baseUrl,
         },
         { makeDefault: Boolean(opts.default) },
       );
-      const { store, backend } = await secretStore();
-      await store.set(name, secret);
+
+      let how: string;
+      if (secret) {
+        const { store, backend } = await secretStore();
+        await store.set(name, secret);
+        how = `secret in ${backend}`;
+      } else {
+        // "required", not "stored": the mode is what has no secret. A profile
+        // switched over from a client secret still has one sitting in the store.
+        how = azAccount
+          ? `auth: Azure CLI as ${azAccount} — no secret required`
+          : 'auth: Azure CLI — no secret required';
+        // Switching away from a secret leaves one behind that nothing uses.
+        // Say so rather than reporting "no secret stored" while one sits in
+        // the keychain — but don't delete it: an Entra client secret is shown
+        // once at creation, so a mistaken switch would be unrecoverable.
+        if (replaced?.auth.type === 'clientSecret') {
+          const { store } = await secretStore();
+          if ((await store.get(name)) !== undefined) {
+            how += `; the previous client secret is kept — remove it with: navapi secrets forget ${name}`;
+          }
+        }
+      }
       console.log(
         `${pc.green('✔')} Profile ${pc.bold(name)} saved ` +
-          pc.dim(`(${opts.environment} @ ${opts.tenant}, secret in ${backend})`),
+          pc.dim(`(${opts.environment} @ ${opts.tenant}, ${how})`),
       );
       console.log(pc.dim(`Next: navapi discover -p ${name}`));
     });
@@ -108,6 +297,37 @@ export function registerProfile(program: Command): void {
         }
         throw new NavApiError(`Connection test failed for "${client.profile.name}": ${message}`);
       }
+    });
+
+  profile
+    .command('az-accounts')
+    .description('List the identities az is signed in as, for --az-account')
+    .option('--json', 'JSON output')
+    .action(async (opts) => {
+      const identities = await azIdentities();
+      if (wantJson(opts.json)) {
+        emitJson(identities);
+        return;
+      }
+      if (!identities.length) {
+        console.log(pc.dim('az is not signed in to any account. Run: az login'));
+        return;
+      }
+      printTable(
+        identities.map((a) => ({
+          '': a.current ? '●' : '',
+          identity: a.user,
+          'tenants az has an account in': a.tenants.join(', '),
+        })),
+        ['', 'identity', 'tenants az has an account in'],
+      );
+      console.log(
+        pc.dim(
+          '● is the identity az is signed in as. An identity can also reach tenants it has\n' +
+            'no account in, through delegated admin or a guest invite — but only while it is\n' +
+            'the one signed in.',
+        ),
+      );
     });
 
   profile

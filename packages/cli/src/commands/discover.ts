@@ -1,13 +1,8 @@
-import type { CachedRouteMetadata, EntitySetInfo } from '@navapi/core';
+import { type CachedRouteMetadata, type EntitySetMatch, searchEntitySets } from '@navapi/core';
 import type { Command } from 'commander';
 import pc from 'picocolors';
 import { createClient } from '../context.js';
 import { columnize, emitJson, printTable, wantJson } from '../output.js';
-
-interface Match {
-  route: string;
-  entitySet: EntitySetInfo;
-}
 
 /** Route enumeration via the runtime API is company-scoped; without a
  * company only the standard route is discoverable — say so instead of
@@ -20,19 +15,6 @@ function warnIfNoCompany(company: string | undefined): void {
       ),
     );
   }
-}
-
-function findMatches(cached: CachedRouteMetadata[], term?: string): Match[] {
-  const needle = term?.toLowerCase();
-  const matches: Match[] = [];
-  for (const entry of cached) {
-    for (const es of entry.metadata.entitySets) {
-      if (!needle || es.name.toLowerCase().includes(needle)) {
-        matches.push({ route: entry.routePath, entitySet: es });
-      }
-    }
-  }
-  return matches;
 }
 
 function printRouteTree(cached: CachedRouteMetadata[], errors: { route: string; error: string }[]) {
@@ -54,7 +36,7 @@ function printRouteTree(cached: CachedRouteMetadata[], errors: { route: string; 
   }
 }
 
-function printSchema(match: Match): void {
+function printSchema(match: EntitySetMatch): void {
   const es = match.entitySet;
   console.log(
     `${pc.bold(pc.cyan(es.name))} ${pc.dim(`(${es.entityType})`)} on route ${pc.bold(match.route)}`,
@@ -86,7 +68,7 @@ export function registerDiscover(program: Command): void {
     .command('discover [term]')
     .description(
       'Ingest $metadata from every API route and browse the result. ' +
-        'With a term: search entity sets; add --schema for the full shape.',
+        'With a term: search entity sets by name or entity type; add --schema for the full shape.',
     )
     .option('--refresh', 'Refetch metadata even if cached')
     .option('--route <route>', 'Limit to one route (e.g. v2.0 or publisher/group/v1.0)')
@@ -137,7 +119,7 @@ export function registerDiscover(program: Command): void {
         return;
       }
 
-      const matches = findMatches(cached, term);
+      const matches = searchEntitySets(cached, term);
       if (wantJson(opts.json)) {
         emitJson(
           matches.map((m) => ({

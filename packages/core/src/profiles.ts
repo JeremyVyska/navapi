@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { defaultConfigDir } from './cache.js';
 import { NavApiError } from './errors.js';
-import type { ProfileConfig } from './types.js';
+import type { ProfileAuth, ProfileConfig, StoredProfile } from './types.js';
 
 interface ProfilesFile {
   profiles: Record<string, ProfileConfig>;
@@ -24,6 +24,52 @@ async function writeFileAtomic(file: string, data: string, mode?: number): Promi
   await rename(tmp, file);
 }
 
+/** The file as it may actually be on disk, including pre-`auth` profiles. */
+interface StoredProfilesFile {
+  profiles: Record<string, StoredProfile>;
+  defaultProfile?: string;
+}
+
+/**
+ * Reads a profile written by any version. Before `auth` existed a profile
+ * carried `clientId` at the top level and meant client-credentials; that is
+ * the only other shape ever released, so it is the only one migrated.
+ *
+ * Migration happens in memory on read, and `serializeProfile` writes the
+ * legacy field back out alongside the new one — so no navapi version is ever
+ * left with a profile it can't read. That matters because any write rewrites
+ * the whole file, not just the profile being changed.
+ */
+function normalizeProfile(stored: StoredProfile): ProfileConfig {
+  const { clientId, auth, ...rest } = stored;
+  return { ...rest, auth: auth ?? inferAuth(clientId) };
+}
+
+function inferAuth(clientId?: string): ProfileAuth {
+  // No clientId and no auth is a profile we can't authenticate. Rather than
+  // guess, record it as client-credentials with an empty client ID so the
+  // factory can raise the error that names the profile and the fix.
+  return { type: 'clientSecret', clientId: clientId ?? '' };
+}
+
+/**
+ * Writes the `auth` union and, for client-secret profiles, the pre-`auth`
+ * top-level `clientId` as well. Saving any profile rewrites every profile in
+ * the file, so without the legacy field a single `profile add` would move
+ * untouched profiles to a shape an older navapi reads as `clientId:
+ * undefined` — which fails against Entra with an opaque `invalid_client`.
+ */
+function serializeProfile(profile: ProfileConfig): StoredProfile {
+  // Normalize on the way in as well: `upsert` is public and callers outside
+  // this package still build the pre-`auth` literal with a top-level clientId
+  // (the MCP server's own tests do). Reading `profile.auth.type` directly
+  // threw on those, so one write path now handles both shapes, the same way
+  // `load()` handles both on read.
+  const normalized = normalizeProfile(profile as StoredProfile);
+  if (normalized.auth.type !== 'clientSecret') return normalized;
+  return { ...normalized, clientId: normalized.auth.clientId };
+}
+
 /** Named profiles stored in `<configDir>/profiles.json` (no secrets in here). */
 export class ProfileStore {
   private readonly file: string;
@@ -37,16 +83,26 @@ export class ProfileStore {
   async load(): Promise<ProfilesFile> {
     try {
       const raw = await readFile(this.file, 'utf8');
-      const parsed = JSON.parse(raw) as ProfilesFile;
-      return { profiles: parsed.profiles ?? {}, defaultProfile: parsed.defaultProfile };
+      const parsed = JSON.parse(raw) as StoredProfilesFile;
+      const profiles: Record<string, ProfileConfig> = {};
+      for (const [name, stored] of Object.entries(parsed.profiles ?? {})) {
+        profiles[name] = normalizeProfile(stored);
+      }
+      return { profiles, defaultProfile: parsed.defaultProfile };
     } catch {
       return { profiles: {} };
     }
   }
 
   private async save(data: ProfilesFile): Promise<void> {
+    const stored: StoredProfilesFile = {
+      profiles: Object.fromEntries(
+        Object.entries(data.profiles).map(([name, p]) => [name, serializeProfile(p)]),
+      ),
+      defaultProfile: data.defaultProfile,
+    };
     await mkdir(this.dir, { recursive: true, mode: 0o700 });
-    await writeFileAtomic(this.file, JSON.stringify(data, null, 2));
+    await writeFileAtomic(this.file, JSON.stringify(stored, null, 2));
   }
 
   async upsert(profile: ProfileConfig, opts: { makeDefault?: boolean } = {}): Promise<void> {

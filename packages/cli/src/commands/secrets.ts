@@ -6,11 +6,13 @@ import {
 } from '@navapi/core';
 import type { Command } from 'commander';
 import pc from 'picocolors';
-import { configDir, profileStore } from '../context.js';
+import { configDir, profileStore, secretStore } from '../context.js';
 import { emitJson, printTable, wantJson } from '../output.js';
 
 interface SecretLocation {
   profile: string;
+  /** False for az-cli profiles, which authenticate without a stored secret. */
+  secretRequired: boolean;
   keychain: boolean;
   file: boolean;
 }
@@ -25,6 +27,7 @@ async function locateSecrets(): Promise<{ keychainAvailable: boolean; rows: Secr
   for (const p of profiles) {
     rows.push({
       profile: p.name,
+      secretRequired: p.auth.type !== 'azureCli',
       keychain: keychain ? (await keychain.get(p.name)) !== undefined : false,
       file: (await file.get(p.name)) !== undefined,
     });
@@ -64,14 +67,30 @@ export function registerSecrets(program: Command): void {
       printTable(
         rows.map((r) => ({
           profile: r.profile,
-          keychain: r.keychain ? '✔' : '',
+          auth: r.secretRequired ? 'app registration' : 'Azure CLI',
+          // An az-cli profile has nothing stored anywhere, which would
+          // otherwise read as a secret that has gone missing.
+          keychain: r.keychain ? '✔' : r.secretRequired ? '' : pc.dim('no secret required'),
           'plaintext file': r.file ? pc.yellow('⚠ yes') : '',
         })),
-        ['profile', 'keychain', 'plaintext file'],
+        ['profile', 'auth', 'keychain', 'plaintext file'],
       );
       if (rows.some((r) => r.file) && keychainAvailable) {
         console.log(pc.dim('Run "navapi secrets migrate" to move file secrets into the keychain.'));
       }
+    });
+
+  secrets
+    .command('forget <profile>')
+    .description('Delete a stored secret without removing the profile')
+    .action(async (name: string) => {
+      const { store } = await secretStore();
+      if ((await store.get(name)) === undefined) {
+        console.log(pc.dim(`No secret stored for ${name}.`));
+        return;
+      }
+      await store.delete(name);
+      console.log(`${pc.green('✔')} Removed the stored secret for ${pc.bold(name)}`);
     });
 
   secrets
