@@ -2,6 +2,9 @@
 
 `Install-NavApi.ps1` installs the navapi CLI beneath the current user's `%LOCALAPPDATA%\navapi` folder and creates a **navapi** Start Menu shortcut. It does not require elevation and does not modify profiles, secrets, or caches in `~/.navapi`.
 
+For end-user download instructions, see
+[Install and run the navapi web UI](../../docs/ui.md#windows-start-menu-installation).
+
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install-NavApi.ps1
 ```
