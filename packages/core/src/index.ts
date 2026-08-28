@@ -1,7 +1,16 @@
 export {
+  type AzExec,
+  type AzExecResult,
+  type AzureCliAccount,
+  AzureCliAuth,
+  type AzureCliAuthOptions,
+  type AzureCliListOptions,
+  activeAzureCliAccount,
   ClientCredentialsAuth,
   type ClientCredentialsOptions,
+  DEFAULT_RESOURCE,
   DEFAULT_SCOPE,
+  listAzureCliAccounts,
   StaticTokenProvider,
   type TokenProvider,
 } from './auth.js';
@@ -80,8 +89,10 @@ export type {
   CachedRouteMetadata,
   EntitySetInfo,
   NavigationPropertyInfo,
+  ProfileAuth,
   ProfileConfig,
   PropertyInfo,
   RouteDiscoveryResult,
   RouteMetadata,
+  StoredProfile,
 } from './types.js';
