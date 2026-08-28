@@ -175,13 +175,14 @@ describe('resolveSecretStore', () => {
   });
 
   it('detects Linux sessions without a desktop D-Bus', () => {
-    expect(isHeadlessLinux('linux', undefined)).toBe(true);
+    expect(isHeadlessLinux('linux', null)).toBe(true);
     expect(isHeadlessLinux('linux', '')).toBe(true);
     expect(isHeadlessLinux('linux', 'unix:path=/run/user/1000/bus')).toBe(false);
     expect(isHeadlessLinux('win32', undefined)).toBe(false);
   });
 
-  it.runIf(process.env.NAVAPI_HEADLESS_KEYRING_TEST === '1')(
+  // Never let this opt-in smoke touch a developer or self-hosted runner's real desktop keychain.
+  it.runIf(process.env.NAVAPI_HEADLESS_KEYRING_TEST === '1' && isHeadlessLinux())(
     'falls back to the file store when the real keyring has no desktop session',
     async () => {
       const resolved = await resolveSecretStore(tmpDir);

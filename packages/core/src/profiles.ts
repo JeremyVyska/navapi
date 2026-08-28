@@ -205,7 +205,7 @@ export interface ResolvedSecretStore {
 
 export function isHeadlessLinux(
   platform: NodeJS.Platform = process.platform,
-  sessionBus = process.env.DBUS_SESSION_BUS_ADDRESS,
+  sessionBus: string | null | undefined = process.env.DBUS_SESSION_BUS_ADDRESS,
 ): boolean {
   return platform === 'linux' && !sessionBus;
 }
