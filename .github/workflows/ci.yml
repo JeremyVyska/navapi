@@ -39,6 +39,21 @@ jobs:
           # never touch a runner's real keychain
           NAVAPI_SECRET_BACKEND: file
 
+      - name: Test headless keyring fallback
+        if: runner.os == 'Linux'
+        run: pnpm --filter @navapi/core exec vitest run test/profiles.test.ts
+        env:
+          NAVAPI_HEADLESS_KEYRING_TEST: "1"
+          NAVAPI_SECRET_BACKEND: ""
+          DBUS_SESSION_BUS_ADDRESS: ""
+          DISPLAY: ""
+          WAYLAND_DISPLAY: ""
+
+      - name: Test Windows bootstrap
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\windows\test\Test-WindowsBootstrap.ps1
+
   package-vsix:
     name: package extension (.vsix)
     runs-on: windows-latest

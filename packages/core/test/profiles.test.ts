@@ -13,6 +13,7 @@ import {
   resolveSecretStore,
   secretServiceAvailable,
 } from '../src/index.js';
+import { isHeadlessLinux } from '../src/profiles.js';
 
 let tmpDir: string;
 
@@ -271,6 +272,25 @@ describe('resolveSecretStore', () => {
       delete process.env.NAVAPI_SECRET_BACKEND;
     }
   });
+
+  it('detects Linux sessions without a desktop D-Bus', () => {
+    expect(isHeadlessLinux('linux', null)).toBe(true);
+    expect(isHeadlessLinux('linux', '')).toBe(true);
+    expect(isHeadlessLinux('linux', 'unix:path=/run/user/1000/bus')).toBe(false);
+    expect(isHeadlessLinux('win32', undefined)).toBe(false);
+  });
+
+  // Never let this opt-in smoke touch a developer or self-hosted runner's real desktop keychain.
+  it.runIf(process.env.NAVAPI_HEADLESS_KEYRING_TEST === '1' && isHeadlessLinux())(
+    'falls back to the file store when the real keyring has no desktop session',
+    async () => {
+      const resolved = await resolveSecretStore(tmpDir);
+      await resolved.store.set('headless-smoke', 'headless-secret');
+
+      expect(await resolved.store.get('headless-smoke')).toBe('headless-secret');
+      expect(await new FileSecretStore(tmpDir).get('headless-smoke')).toBe('headless-secret');
+    },
+  );
 });
 
 const onLinux = process.platform === 'linux';
@@ -331,6 +351,7 @@ describe('MetadataCache', () => {
   it('stores per profile × route with sanitized filenames', async () => {
     const cache = new MetadataCache(tmpDir);
     await cache.set('p1', 'contoso/fieldops/v1.0', { namespace: 'X', entitySets: [] });
+    await cache.set('p1', 'ODataV4', { namespace: 'Microsoft.NAV', entitySets: [] });
     await cache.set('p1', 'v2.0', { namespace: 'Microsoft.NAV', entitySets: [] });
     await cache.set('p2', 'v2.0', { namespace: 'Microsoft.NAV', entitySets: [] });
 
@@ -339,8 +360,7 @@ describe('MetadataCache', () => {
     expect(entry?.fetchedAt).toBeTruthy();
 
     const listed = await cache.list('p1');
-    expect(listed.map((e) => e.routePath)).toEqual(['contoso/fieldops/v1.0', 'v2.0']);
-
+    expect(listed.map((e) => e.routePath)).toEqual(['contoso/fieldops/v1.0', 'ODataV4', 'v2.0']);
     await cache.clear('p1');
     expect(await cache.list('p1')).toEqual([]);
     expect((await cache.list('p2')).length).toBe(1);

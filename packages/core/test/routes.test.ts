@@ -35,6 +35,13 @@ describe('parseRoutesResponse', () => {
     expect(routes).toEqual([{ path: 'v2.0', version: 'v2.0' }]);
   });
 
+  it('excludes ODataV4 because it is not an API route', () => {
+    const routes = parseRoutesResponse({
+      value: [{ route: 'ODataV4' }, { publisher: '', group: '', version: 'odatav4' }, 'v2.0'],
+    });
+    expect(routes).toEqual([{ path: 'v2.0', version: 'v2.0' }]);
+  });
+
   it('returns empty array for unrecognized payloads', () => {
     expect(parseRoutesResponse(undefined)).toEqual([]);
     expect(parseRoutesResponse({ value: 'nope' })).toEqual([]);

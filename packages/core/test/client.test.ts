@@ -167,7 +167,9 @@ describe('BcClient routes & discovery', () => {
       ODATA_UNAVAILABLE,
       {
         match: `${API}/microsoft/runtime/beta/companies(${COMPANY_ID})/apiRoutes`,
-        body: { value: [{ route: 'v2.0' }, { route: 'contoso/fieldops/v1.0' }] },
+        body: {
+          value: [{ route: 'v2.0' }, { route: 'contoso/fieldops/v1.0' }, { route: 'ODataV4' }],
+        },
       },
     ]);
     const routes = await client.listRoutes();
@@ -220,6 +222,19 @@ describe('BcClient routes & discovery', () => {
     ]);
     const routes = await client.listRoutes();
     expect(routes).toEqual([{ path: 'v2.0', version: 'v2.0' }]);
+  });
+
+  it('lists cached ODataV4 metadata alongside API routes', async () => {
+    const { client } = makeClient([]);
+    const cache = new MetadataCache(tmpDir);
+    const metadata = { namespace: 'Microsoft.NAV', entitySets: [] };
+    await cache.set('test', 'ODataV4', metadata);
+    await cache.set('test', 'v2.0', metadata);
+
+    expect((await client.cachedMetadata()).map((route) => route.routePath).sort()).toEqual([
+      'ODataV4',
+      'v2.0',
+    ]);
   });
 
   it('discovers all routes, caches metadata, and reports per-route failures', async () => {

@@ -29,8 +29,16 @@ navapi patch SalesLine --route ODataV4 \
   --key '{"Document_Type":"Order","Document_No":"SO-1","Line_No":10000}' \
   --set Quantity=2
 navapi delete salesOrders <id> --yes
+
+# Dedicated browser UI (loopback-only, authenticated per process)
+navapi ui
 ```
 
 Humans on a TTY get tables; pipes and `--json` get stable JSON.
 
 Secrets go to the **OS keychain** when available (file fallback otherwise; `NAVAPI_CLIENT_SECRET` env var covers CI). `navapi secrets status` shows where each profile's secret lives; `navapi secrets migrate` moves any plaintext leftovers into the keychain.
+
+`navapi ui` opens a read-only local web application using the same profiles, secrets, companies, and metadata cache. Use `--no-open` for headless startup; it prints the process-scoped authenticated URL, which must be treated as a secret. Use `--idle-timeout <seconds>` to change how long the server waits after browser heartbeats stop. On headless Linux systems without a desktop keyring session, set `NAVAPI_SECRET_BACKEND=file` deliberately.
+
+See the [web UI installation guide](../../docs/ui.md) for complete npm, Windows,
+and headless setup instructions.

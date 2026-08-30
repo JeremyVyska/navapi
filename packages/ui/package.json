@@ -1,7 +1,7 @@
 {
-  "name": "@navapi/cli",
+  "name": "@navapi/ui",
   "version": "0.2.0",
-  "description": "The Business Central API CLI that doesn't make you cry. Discovery-first, agent-friendly, ETag-safe. Installs the `navapi` command.",
+  "description": "Secure local web interface for browsing Business Central APIs with navapi.",
   "license": "MIT",
   "publishConfig": {
     "access": "public",
@@ -10,11 +10,20 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/JeremyVyska/navapi.git",
-    "directory": "packages/cli"
+    "directory": "packages/ui"
   },
   "type": "module",
-  "bin": {
-    "navapi": "./dist/index.js"
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared.d.ts",
+      "import": "./dist/shared.js"
+    }
   },
   "files": [
     "dist",
@@ -30,12 +39,12 @@
   },
   "dependencies": {
     "@navapi/core": "workspace:*",
-    "@navapi/ui": "workspace:*",
-    "commander": "^14.0.0",
-    "picocolors": "^1.1.0"
+    "@vscode/codicons": "0.0.46-24"
   },
   "devDependencies": {
+    "@napi-rs/keyring": "^1.1.0",
     "@types/node": "^24.0.0",
+    "jsdom": "^29.1.1",
     "tsup": "^8.5.0",
     "typescript": "^5.8.0",
     "vitest": "^3.2.0"

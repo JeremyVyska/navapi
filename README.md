@@ -4,12 +4,13 @@
 
 > The Business Central API toolkit that doesn't make you cry. 🧭
 
-**navapi** is a discovery-first toolkit for talking to Microsoft Dynamics 365 Business Central APIs — with four faces sharing one brain:
+**navapi** is a discovery-first toolkit for talking to Microsoft Dynamics 365 Business Central APIs — with five faces sharing one brain:
 
 - 📚 **`@navapi/core`** — TypeScript library. Auth, HTTP, ETag handling, `$metadata` discovery, pagination, retries.
 - 🖥️ **`navapi` CLI** — because typing beats clicking. Agent-friendly with stable `--json` output.
 - 🧩 **`navapi-vscode`** — Profiles/Companies/Endpoint Browser in the sidebar, a records grid with a BC-style query builder, server-side sort/paging, FastTab detail panes, and right-click filtering. Registers the MCP server for **GitHub Copilot agent mode** out of the box. For humans who like buttons.
 - 🤖 **`@navapi/mcp`** — Model Context Protocol server: 24 typed tools (incl. the full Data Braider set), so agents get discovery, CRUD, actions, `$batch`, paging, and Data Braider read/write/authoring without shelling out.
+- 🌐 **`navapi ui` / `@navapi/ui`** — secure local web application for consultants and administrators: shared profiles, companies, endpoint discovery, schemas, and read-only record queries without requiring VS Code.
 
 > "NAV lives. Now with better verbs."
 
@@ -27,9 +28,17 @@ Postman is a great HTTP client. It is *not* a great **Business Central** client.
 npm i -g @navapi/cli     # the `navapi` command
 npm i @navapi/core       # the library
 npm i -g @navapi/mcp     # the MCP server (`navapi-mcp`)
+navapi ui                # open the local web application
 ```
 
 > The bare `navapi` npm name is squatted by an empty placeholder — the CLI lives at `@navapi/cli`, but the command it installs is still `navapi`.
+
+See [Install and run the navapi web UI](docs/ui.md) for profile setup, launch
+options, headless operation, and the user-scoped Windows Start Menu installer.
+
+On headless Linux or over SSH, navapi automatically falls back to `~/.navapi/secrets.json`
+when no desktop keyring session is available. Set `NAVAPI_SECRET_BACKEND=file`
+explicitly for predictable headless operation.
 
 ## What it looks like
 
@@ -141,7 +150,7 @@ The VS Code extension grows a **Data Braider** section (endpoint browser with Br
 
 ## Architecture
 
-One repo, workspace monorepo (pnpm), four packages:
+One repo, workspace monorepo (pnpm), five packages:
 
 ```
 navapi/
@@ -149,7 +158,8 @@ navapi/
 │   ├── core/       → @navapi/core     library, zero UI assumptions
 │   ├── cli/        → navapi           thin wrapper, TTY-aware output
 │   ├── vscode/     → navapi-vscode    extension, thin wrapper
-│   └── mcp/        → @navapi/mcp      MCP server, thin wrapper
+│   ├── mcp/        → @navapi/mcp      MCP server, thin wrapper
+│   └── ui/         → @navapi/ui       secure local web application
 ├── docs/           (planned — docs site)
 ├── examples/       (planned)
 └── .changeset/
@@ -164,7 +174,7 @@ navapi/
 3. **ETags are not the user's problem.** `patch` and `delete` transparently GET-then-modify with `If-Match`. Concurrency safety by default.
 4. **Profiles, not env vars.** Named profiles for every customer × environment combo. Secrets go to the **OS keychain** (Credential Manager / Keychain / libsecret via `@napi-rs/keyring`), with a file fallback on platforms without one — existing file secrets migrate to the keychain automatically on first use. `navapi secrets status` shows where every secret lives; `NAVAPI_CLIENT_SECRET` covers CI and `NAVAPI_SECRET_BACKEND=file` opts out. Profiles created with `--auth azureCli` have no secret to store at all.
 5. **Batching is a first-class citizen.** `$batch` support from day one — bulk ops are where BC APIs get slow.
-6. **Same brain, four faces.** Any capability added to `core` is instantly available to CLI, VS Code, and MCP.
+6. **Same brain, five faces.** Any capability added to `core` is available to the CLI, VS Code, MCP, and local web application.
 
 ## Published ODataV4 web services
 
@@ -198,7 +208,8 @@ Roadmap:
 - [x] `navapi-vscode`: registers the MCP server for GitHub Copilot agent mode (VS Code 1.101+), scoped to the active profile
 - [x] `navapi-vscode`: sidebar sections (Profiles / Companies / Endpoint Browser with live record counts), records grid (server-side sort + paging via `odata.maxpagesize`, query builder for `$filter`/`$select`/`$count`, copyable query URL, BC-style right-click filtering, FastTab detail panes with lazy-loaded navigations), profile add/edit form with Test Connection
 - [x] OS-keychain secret backend (`@napi-rs/keyring`, layered over the file store with auto-migration; `navapi secrets status|migrate`; keychain binding ships inside the `.vsix`)
-- [x] Native Data Braider support across all four faces (discovery, parsed reads/writes, live schema on Braider 2.4+, remote endpoint authoring, VS Code section + guided endpoint creation, `braider_*` MCP tools)
+- [x] Native Data Braider support in core, CLI, MCP, and VS Code (discovery, parsed reads/writes, live schema on Braider 2.4+, remote endpoint authoring, VS Code section + guided endpoint creation, `braider_*` MCP tools)
+- [x] Secure local `navapi ui` application with shared profiles, companies, endpoint discovery, schemas, read-only records, loopback session authentication, and a Windows bootstrap installer
 - [ ] Docs site
 - [x] `0.2.0` to npm + the VS Code Marketplace
 

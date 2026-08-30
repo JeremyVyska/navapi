@@ -275,6 +275,13 @@ export interface ResolvedSecretStore {
   backend: 'keychain' | 'file';
 }
 
+export function isHeadlessLinux(
+  platform: NodeJS.Platform = process.platform,
+  sessionBus: string | null | undefined = process.env.DBUS_SESSION_BUS_ADDRESS,
+): boolean {
+  return platform === 'linux' && !sessionBus;
+}
+
 /**
  * Whether the OS keychain is a durable place to leave the only copy of a
  * secret.
@@ -299,14 +306,18 @@ export function secretServiceAvailable(): boolean {
 /**
  * The store every face should use. Prefers the OS keychain (layered over the
  * file store so existing secrets migrate); falls back to the plain file
- * store when no keychain is available or NAVAPI_SECRET_BACKEND=file.
+ * store when no keychain is available, Linux has no desktop D-Bus session, or
+ * NAVAPI_SECRET_BACKEND=file.
  */
 export async function resolveSecretStore(
   dir?: string,
   opts: { keyringFactory?: KeyringFactory | null } = {},
 ): Promise<ResolvedSecretStore> {
   const file = new FileSecretStore(dir);
-  if (process.env.NAVAPI_SECRET_BACKEND === 'file') {
+  if (
+    process.env.NAVAPI_SECRET_BACKEND === 'file' ||
+    (opts.keyringFactory === undefined && isHeadlessLinux())
+  ) {
     return { store: file, backend: 'file' };
   }
   let factory: KeyringFactory | null;

@@ -9,6 +9,7 @@ import { registerCrud } from './commands/crud.js';
 import { registerDiscover } from './commands/discover.js';
 import { registerProfile } from './commands/profile.js';
 import { registerSecrets } from './commands/secrets.js';
+import { registerUi } from './commands/ui.js';
 
 const program = new Command();
 
@@ -27,6 +28,7 @@ registerAction(program);
 registerCompany(program);
 registerBraider(program);
 registerSecrets(program);
+registerUi(program);
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   if (err instanceof HttpError) {
