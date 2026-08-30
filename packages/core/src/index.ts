@@ -80,6 +80,16 @@ export {
 export { BcHttp, type BcHttpOptions, type BcResponse, type RequestOptions } from './http.js';
 export { parseMetadata } from './metadata.js';
 export {
+  buildPortableConfig,
+  type ExportOptions,
+  type ImportPlan,
+  type ImportPlanOptions,
+  PORTABLE_VERSION,
+  type PortableConfig,
+  parsePortableConfig,
+  planImport,
+} from './portability.js';
+export {
   buildFilterExpression,
   buildGrid,
   classifyCell,

@@ -167,6 +167,38 @@ run. Profiles are deliberately *not* merged onto a shared credential just
 because they use the same client ID; consolidating is `navapi credential`'s job
 when you decide to.
 
+### Sharing a setup
+
+`navapi profile export` writes the profiles and the credentials they use as
+portable JSON. **It never contains a secret**, whatever backend the exporting
+machine used — that is the contract, so the file is safe to commit, paste into
+a ticket, or hand to a colleague.
+
+```bash
+navapi profile export                          # everything, to stdout
+navapi profile export contoso-prod --out team.json   # just this one, plus the credential it uses
+navapi profile import team.json
+navapi profile import team.json --rename contoso-prod=acme-prod
+```
+
+Importing lands the profiles and credentials and then tells you exactly which
+credentials still need a secret — supply each with `navapi credential add <name>
+--secret …`, `NAVAPI_CLIENT_SECRET`, or the VS Code form. Until then, using such
+a profile says so plainly instead of surfacing a raw Entra error.
+
+Details worth knowing:
+
+- **Exporting one profile exports one credential.** Only the credentials the
+  exported profiles reference come along; the rest of your estate stays home.
+- **A pinned Azure CLI identity is left out.** It names *your* login and would
+  be wrong on anyone else's machine, so each person's own `az login` applies.
+  The export says when it dropped one.
+- **Collisions are refused, all of them at once**, and nothing is imported.
+  `--overwrite` replaces; `--rename old=new` keeps both.
+- **A file carrying a secret is rejected, not silently cleaned.** navapi never
+  writes one, so a secret in an import file means it was mishandled somewhere —
+  and that secret should be treated as compromised.
+
 ### Read-only profiles
 
 Mark a profile read-only and every write through it is refused — create, update,
@@ -274,6 +306,7 @@ Roadmap:
 - [x] `@navapi/core`: `$metadata` discovery + on-disk cache (routes enumerated via the runtime API's `apiRoutes`, with `/api/routes` and `v2.0` fallbacks)
 - [x] Read-only discovery and browsing for published `/ODataV4` page/query web services
 - [x] Credentials separated from tenant/environment context: one identity backs many profiles, `--credential`/`--tenant`/`--environment` override per call, and older profiles migrate on read with no keychain changes
+- [x] Profile import/export (`navapi profile export` / `import`), secrets never included, with collision handling and a report of which credentials still need one
 - [x] Read-only profiles: `--read-only` refuses every write (including writes inside a `$batch`) across all faces — a guardrail against accidental or agent-hallucinated writes, not a security boundary
 - [x] `navapi` CLI: `profile`, `get`, `post`, `patch`, `delete`, `discover` (+ `routes`, `ls`, `companies`)
 - [x] `@navapi/core`: `$batch` support (JSON batch, `{company}` substitution, atomicity groups)

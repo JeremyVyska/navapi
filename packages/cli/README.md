@@ -24,6 +24,10 @@ navapi credential list             # identities, and the profiles each backs
 navapi get customers --tenant $OTHER_TENANT
 navapi discover --credential contoso-app --tenant $T --environment Production
 
+# Hand a colleague your setup — never includes secrets, safe to commit
+navapi profile export --out team.json
+navapi profile import team.json        # says which credentials still need a secret
+
 navapi company list                # companies in the environment (● = current default)
 navapi company use                 # switch the default company (interactive picker on a TTY)
 navapi routes                      # every API route the environment exposes

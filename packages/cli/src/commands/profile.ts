@@ -1,9 +1,15 @@
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   activeAzureCliAccount,
+  buildPortableConfig,
+  type Credential,
   listAzureCliAccounts,
   MetadataCache,
   NavApiError,
+  type ProfileConfig,
+  parsePortableConfig,
+  planImport,
 } from '@navapi/core';
 import type { Command } from 'commander';
 import pc from 'picocolors';
@@ -134,6 +140,15 @@ export async function pickAzAccount(): Promise<string | undefined> {
   const picked = identities[Number.parseInt(answer, 10) - 1];
   if (!picked) throw new NavApiError(`No identity at position "${answer}".`);
   return picked.user;
+}
+
+/** `--rename old=new`, repeatable. */
+function collectRename(value: string, previous: Record<string, string>): Record<string, string> {
+  const at = value.indexOf('=');
+  if (at <= 0 || at === value.length - 1) {
+    throw new NavApiError(`--rename expects old=new, got "${value}".`);
+  }
+  return { ...previous, [value.slice(0, at)]: value.slice(at + 1) };
 }
 
 export function registerProfile(program: Command): void {
@@ -311,6 +326,102 @@ export function registerProfile(program: Command): void {
         })),
         ['', 'name', 'environment', 'tenant', 'company', 'credential', 'access'],
       );
+    });
+
+  profile
+    .command('export [names...]')
+    .description('Export profiles and their credentials as portable JSON (never includes secrets)')
+    .option('--out <file>', 'Write to a file instead of stdout')
+    .action(async (names: string[], opts) => {
+      const { profiles, credentials } = await profileStore().listAll();
+      const config = buildPortableConfig(profiles, credentials, { names });
+      const json = `${JSON.stringify(config, null, 2)}\n`;
+      if (!opts.out) {
+        process.stdout.write(json);
+        return;
+      }
+      await writeFile(opts.out, json, 'utf8');
+      const azPinned = credentials.filter(
+        (c) =>
+          c.type === 'azureCli' &&
+          c.account &&
+          config.credentials.some((e: Credential) => e.name === c.name),
+      );
+      console.log(
+        `${pc.green('✔')} Exported ${config.profiles.length} profile(s) and ` +
+          `${config.credentials.length} credential(s) to ${pc.bold(opts.out)} ` +
+          pc.dim('(no secrets — safe to share or commit)'),
+      );
+      if (azPinned.length) {
+        // Silently dropping a field someone set is worse than saying so.
+        console.log(
+          pc.dim(
+            `The az identity pinned on ${azPinned.map((c) => c.name).join(', ')} was left out — ` +
+              'it names your login, and whoever imports this uses their own.',
+          ),
+        );
+      }
+    });
+
+  profile
+    .command('import <file>')
+    .description('Import profiles and credentials from an exported file')
+    .option('--overwrite', 'Replace profiles and credentials that already exist')
+    .option(
+      '--rename <old=new>',
+      'Import a profile under a different name; repeatable',
+      collectRename,
+      {} as Record<string, string>,
+    )
+    .option('--json', 'JSON output')
+    .action(async (file: string, opts) => {
+      const incoming = parsePortableConfig(JSON.parse(await readFile(file, 'utf8')));
+      const store = profileStore();
+      const existing = await store.listAll();
+      const { store: secrets } = await secretStore();
+
+      // Resolve which credentials already have a secret before touching
+      // anything, so the plan can report what is still missing.
+      const stored = new Map<string, boolean>();
+      for (const c of incoming.credentials) {
+        stored.set(c.name, (await secrets.get(c.name)) !== undefined);
+      }
+
+      const plan = planImport(incoming, existing, (name: string) => stored.get(name) ?? false, {
+        rename: opts.rename,
+        overwrite: Boolean(opts.overwrite),
+      });
+
+      for (const credential of plan.credentials) await store.upsertCredential(credential);
+      for (const profile of plan.profiles) await store.upsert(profile);
+
+      if (wantJson(opts.json)) {
+        emitJson({
+          profiles: plan.profiles.map((p: ProfileConfig) => p.name),
+          credentials: plan.credentials.map((c: Credential) => c.name),
+          replaced: plan.replacing,
+          needSecret: plan.needSecret,
+        });
+        return;
+      }
+      console.log(
+        `${pc.green('✔')} Imported ${plan.profiles.length} profile(s) and ` +
+          `${plan.credentials.length} credential(s)` +
+          (plan.replacing.profiles.length || plan.replacing.credentials.length
+            ? pc.dim(
+                ` (replaced ${[...plan.replacing.profiles, ...plan.replacing.credentials].join(', ')})`,
+              )
+            : ''),
+      );
+      if (plan.needSecret.length) {
+        console.log();
+        console.log(pc.yellow('Still needs a client secret:'));
+        for (const name of plan.needSecret) {
+          console.log(
+            `  ${name}  ${pc.dim(`— navapi credential add ${name} --client-id … --secret …`)}`,
+          );
+        }
+      }
     });
 
   profile

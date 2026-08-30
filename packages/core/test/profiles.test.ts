@@ -222,6 +222,42 @@ describe('ProfileStore', () => {
     expect(written.profiles.other.clientId).toBeUndefined();
   });
 
+  it('preserves fields it does not know about, on profiles and credentials', async () => {
+    // This is what lets a later feature add optional fields — on-premises
+    // addressing (#19) is the live example — without owing users a migration.
+    // A `migrate()` that built profiles field-by-field instead of spreading
+    // would silently drop them, and nobody would notice until a config broke.
+    await writeConfig({
+      version: 2,
+      credentials: {
+        c1: { name: 'c1', type: 'clientSecret', clientId: 'x', futureCredField: 'keep' },
+      },
+      profiles: {
+        p1: {
+          name: 'p1',
+          credential: 'c1',
+          tenantId: 't',
+          environment: 'E',
+          apiRoot: 'http://bc:7048/BC/api',
+          deployment: 'onPremises',
+        },
+      },
+      defaultProfile: 'p1',
+    });
+
+    const store = new ProfileStore(tmpDir);
+    // an unrelated write rewrites the whole file
+    await store.upsertWithCredential(
+      { name: 'p2', tenantId: 't2', environment: 'E2' },
+      { name: 'c2', type: 'azureCli' },
+    );
+
+    const written = JSON.parse(await readFile(path.join(tmpDir, 'profiles.json'), 'utf8'));
+    expect(written.profiles.p1.apiRoot).toBe('http://bc:7048/BC/api');
+    expect(written.profiles.p1.deployment).toBe('onPremises');
+    expect(written.credentials.c1.futureCredField).toBe('keep');
+  });
+
   it('gives a friendly error when nothing is configured', async () => {
     const store = new ProfileStore(tmpDir);
     await expect(store.get()).rejects.toThrow(/navapi profile add/);
