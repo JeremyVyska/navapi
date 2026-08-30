@@ -1,6 +1,6 @@
 {
   "name": "@navapi/core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Business Central API toolkit core: auth, HTTP, ETag handling, $metadata discovery, pagination, retries.",
   "license": "MIT",
   "publishConfig": {

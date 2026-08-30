@@ -1,6 +1,6 @@
 {
   "name": "@navapi/mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Model Context Protocol server for Microsoft Dynamics 365 Business Central — typed tools for discovery, CRUD, bound actions, and $batch.",
   "license": "MIT",
   "publishConfig": {

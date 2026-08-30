@@ -297,7 +297,7 @@ The VS Code records browser intentionally remains read-only for both API and ODa
 
 ## Status
 
-🚀 **0.2.0 — live.** All four faces are built and tested (180+ tests) against a mock BC server, with native Data Braider support and GitHub Copilot (MCP) integration in the VS Code extension. The extension is on the VS Code Marketplace; `@navapi/core`, `@navapi/cli`, and `@navapi/mcp` publish to npm at 0.2.0.
+🚀 **0.3.0.** Five faces now — library, CLI, MCP server, VS Code extension, and the new local web app — built and tested (350+ tests) against a mock BC server, with native Data Braider support and GitHub Copilot (MCP) integration in the extension. `@navapi/core`, `@navapi/cli`, `@navapi/mcp`, and `@navapi/ui` publish to npm; the extension is on the VS Code Marketplace. 0.3.0 adds Azure CLI authentication, published ODataV4 web services, credentials separated from tenant/environment context, read-only profiles, and profile import/export.
 
 Roadmap:
 
@@ -319,6 +319,9 @@ Roadmap:
 - [x] Secure local `navapi ui` application with shared profiles, companies, endpoint discovery, schemas, read-only records, loopback session authentication, and a Windows bootstrap installer
 - [ ] Docs site
 - [x] `0.2.0` to npm + the VS Code Marketplace
+- [x] Azure CLI authentication (delegated), with identity pinning for GDAP and guest access
+- [x] Tag-triggered releases: npm via trusted publishing (OIDC, no token), universal vsix attached to the GitHub Release
+- [ ] `0.3.0` to npm + the VS Code Marketplace
 
 ## What Ifs
 
