@@ -35,19 +35,40 @@ export function isGuid(value: string): boolean {
   return GUID_RE.test(value);
 }
 
+/**
+ * Percent-encodes the *content* of a key, leaving OData's own delimiters to
+ * the caller. Doubling an apostrophe is OData string escaping and says nothing
+ * about URL structure — and these literals are interpolated straight into a
+ * request path, where `#` truncates it at the fragment, `?` starts the query,
+ * `/` invents a path segment, `&` and `+` corrupt anything downstream, and a
+ * bare `%` breaks the server's own decode. `encodeURIComponent` leaves the
+ * RFC 3986 sub-delims `!'()*` alone; `(`, `)` and `,` would close or split the
+ * key predicate, so they go too. The apostrophe is the one exception: it stays
+ * literal, because it is OData syntax here rather than content.
+ */
+function encodeKeyText(text: string): string {
+  return encodeURIComponent(text).replace(
+    /[!()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
 function formatKeyValue(value: ODataKeyValue): string {
   if (typeof value === 'string') {
-    return isGuid(value) ? value : `'${value.replace(/'/g, "''")}'`;
+    // A GUID's charset is URL-safe, and BC wants it bare rather than quoted.
+    return isGuid(value) ? value : `'${encodeKeyText(value.replace(/'/g, "''"))}'`;
   }
   if (typeof value === 'number' && !Number.isFinite(value)) {
     throw new TypeError('OData record keys cannot contain non-finite numbers.');
   }
+  // Numbers and booleans stringify to a URL-safe charset already.
   return String(value);
 }
 
 /**
  * Formats a scalar or named composite key for OData addressing. GUID-shaped
- * strings stay bare for BC compatibility; other strings are quoted and escaped.
+ * strings stay bare for BC compatibility; other strings are quoted, escaped,
+ * and percent-encoded so that reserved characters cannot restructure the URL.
  */
 export function formatKey(key: RecordKey): string {
   if (typeof key === 'string') return formatKeyValue(key);
@@ -56,5 +77,10 @@ export function formatKey(key: RecordKey): string {
   if (entries.some(([name]) => !name.trim())) {
     throw new TypeError('OData record key field names cannot be empty.');
   }
-  return entries.map(([name, value]) => `${name}=${formatKeyValue(value)}`).join(',');
+  // Field names come from $metadata and are identifiers in practice, so
+  // encoding them is a no-op — but it is the same class of bug if one ever
+  // carries a `,` or `=`, which would split the predicate.
+  return entries
+    .map(([name, value]) => `${encodeKeyText(name)}=${formatKeyValue(value)}`)
+    .join(',');
 }

@@ -572,6 +572,26 @@ describe('BcClient ETag handling', () => {
     expect(calls[1].headers['if-match']).toBe('W/"customer-1"');
   });
 
+  it('sends a key with reserved characters as one intact path segment', async () => {
+    const { client, calls } = makeClient(
+      [
+        {
+          method: 'GET',
+          match: (url) => url.includes("Item(No='A%231%2FB')"),
+          body: { '@odata.etag': 'W/"item-1"', No: 'A#1/B' },
+        },
+      ],
+      COMPANY_ID,
+    );
+
+    const record = await client.getRecord('Item', { No: 'A#1/B' }, { route: ODATA_V4_ROUTE });
+
+    // Unencoded, `#` truncated the request at the fragment and BC never saw the key.
+    expect(calls[0].url).toBe(`${ODATA}/Company(Id=${COMPANY_ID})/Item(No='A%231%2FB')`);
+    expect(calls[0].url).not.toContain('#');
+    expect(record.No).toBe('A#1/B');
+  });
+
   const recordUrl = `${API}/v2.0/companies(${COMPANY_ID})/customers(${CUSTOMER_ID})`;
 
   it('GETs the record for its ETag, then PATCHes with If-Match', async () => {
