@@ -3,6 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  CONFIG_VERSION,
+  type Credential,
   FileSecretStore,
   KeychainSecretStore,
   type KeyringFactory,
@@ -25,18 +27,28 @@ afterEach(async () => {
   await rm(tmpDir, { recursive: true, force: true });
 });
 
+const CREDENTIAL: Credential = { name: 'contoso-app', type: 'clientSecret', clientId: 'c' };
+
 const PROFILE: ProfileConfig = {
   name: 'contoso-prod',
+  credential: 'contoso-app',
   tenantId: 't',
-  auth: { type: 'clientSecret', clientId: 'c' },
   environment: 'Production',
   company: 'CRONUS',
 };
 
+/** Writes a config file exactly as some older navapi would have. */
+async function writeConfig(contents: unknown): Promise<string> {
+  await mkdir(tmpDir, { recursive: true });
+  const file = path.join(tmpDir, 'profiles.json');
+  await writeFile(file, JSON.stringify(contents), 'utf8');
+  return file;
+}
+
 describe('ProfileStore', () => {
   it('round-trips profiles and makes the first one default', async () => {
     const store = new ProfileStore(tmpDir);
-    await store.upsert(PROFILE);
+    await store.upsertWithCredential(PROFILE, CREDENTIAL);
     await store.upsert({ ...PROFILE, name: 'contoso-uat', environment: 'UAT' });
 
     expect((await store.get()).name).toBe('contoso-prod');
@@ -46,115 +58,186 @@ describe('ProfileStore', () => {
     expect((await store.get()).name).toBe('contoso-uat');
   });
 
+  it('shares one credential across profiles pointed at different targets', async () => {
+    const store = new ProfileStore(tmpDir);
+    await store.upsertWithCredential(PROFILE, CREDENTIAL);
+    await store.upsert({ ...PROFILE, name: 'contoso-uat', tenantId: 't2', environment: 'UAT' });
+
+    // the whole point of the split: one identity, many targets, one secret
+    expect((await store.listCredentials()).map((c) => c.name)).toEqual(['contoso-app']);
+    const uat = await store.resolve('contoso-uat');
+    expect(uat.resolvedCredential).toEqual(CREDENTIAL);
+    expect(uat.tenantId).toBe('t2');
+  });
+
+  it('refuses a profile that references a credential that does not exist', async () => {
+    const store = new ProfileStore(tmpDir);
+    await expect(store.upsert({ ...PROFILE, credential: 'ghost' })).rejects.toThrow(
+      /credential "ghost", which does not exist/,
+    );
+  });
+
+  it('refuses to remove a credential a profile still points at', async () => {
+    const store = new ProfileStore(tmpDir);
+    await store.upsertWithCredential(PROFILE, CREDENTIAL);
+    await expect(store.removeCredential('contoso-app')).rejects.toThrow(
+      /still used by "contoso-prod"/,
+    );
+
+    await store.remove('contoso-prod');
+    await store.removeCredential('contoso-app');
+    expect(await store.listCredentials()).toEqual([]);
+  });
+
   it('removes profiles and reassigns the default', async () => {
     const store = new ProfileStore(tmpDir);
-    await store.upsert(PROFILE);
+    await store.upsertWithCredential(PROFILE, CREDENTIAL);
     await store.upsert({ ...PROFILE, name: 'other' });
     await store.remove('contoso-prod');
     expect((await store.get()).name).toBe('other');
     await expect(store.get('contoso-prod')).rejects.toThrow(/not found/);
   });
 
-  it('round-trips an azureCli profile, which has no client ID', async () => {
+  it('round-trips an azureCli credential, which has no client ID', async () => {
     const store = new ProfileStore(tmpDir);
-    await store.upsert({
-      name: 'az-profile',
-      tenantId: 't',
-      auth: { type: 'azureCli', account: 'me@example.com' },
-      environment: 'Sandbox-UAT',
-    });
-
-    const saved = await store.get('az-profile');
-    expect(saved.auth).toEqual({ type: 'azureCli', account: 'me@example.com' });
-  });
-
-  it('reads a profile written before `auth` existed as client-credentials', async () => {
-    // The only other shape ever released: clientId at the top level.
-    await mkdir(tmpDir, { recursive: true });
-    await writeFile(
-      path.join(tmpDir, 'profiles.json'),
-      JSON.stringify({
-        profiles: {
-          legacy: {
-            name: 'legacy',
-            tenantId: 't',
-            clientId: 'old-client',
-            environment: 'Production',
-          },
-        },
-        defaultProfile: 'legacy',
-      }),
-      'utf8',
+    await store.upsertWithCredential(
+      { name: 'az-profile', tenantId: 't', environment: 'Sandbox-UAT' },
+      { name: 'me', type: 'azureCli', account: 'me@example.com' },
     );
 
-    const saved = await new ProfileStore(tmpDir).get('legacy');
-    expect(saved.auth).toEqual({ type: 'clientSecret', clientId: 'old-client' });
+    expect((await store.resolve('az-profile')).resolvedCredential).toEqual({
+      name: 'me',
+      type: 'azureCli',
+      account: 'me@example.com',
+    });
+  });
+
+  it('migrates a v0 profile (published 0.2.0: clientId at the top level)', async () => {
+    await writeConfig({
+      profiles: {
+        legacy: {
+          name: 'legacy',
+          tenantId: 't',
+          clientId: 'old-client',
+          environment: 'Production',
+        },
+      },
+      defaultProfile: 'legacy',
+    });
+
+    const store = new ProfileStore(tmpDir);
+    const resolved = await store.resolve('legacy');
+    // The credential takes the profile's name, so the secret already stored
+    // under "legacy" is still the one this credential resolves.
+    expect(resolved.credential).toBe('legacy');
+    expect(resolved.resolvedCredential).toEqual({
+      name: 'legacy',
+      type: 'clientSecret',
+      clientId: 'old-client',
+    });
+  });
+
+  it('migrates a v1 profile (the `auth` union, which never shipped)', async () => {
+    await writeConfig({
+      profiles: {
+        appreg: {
+          name: 'appreg',
+          tenantId: 't',
+          auth: { type: 'clientSecret', clientId: 'c1' },
+          environment: 'P',
+        },
+        azcli: {
+          name: 'azcli',
+          tenantId: 't',
+          auth: { type: 'azureCli', account: 'me@example.com' },
+          environment: 'P',
+        },
+      },
+    });
+
+    const store = new ProfileStore(tmpDir);
+    expect((await store.resolve('appreg')).resolvedCredential).toEqual({
+      name: 'appreg',
+      type: 'clientSecret',
+      clientId: 'c1',
+    });
+    expect((await store.resolve('azcli')).resolvedCredential).toEqual({
+      name: 'azcli',
+      type: 'azureCli',
+      account: 'me@example.com',
+    });
+  });
+
+  it('mints one credential per profile rather than merging a shared client ID', async () => {
+    // Two profiles on the same app registration may still have different
+    // secrets stored under their own names; merging would authenticate one
+    // with the other's secret.
+    await writeConfig({
+      profiles: {
+        a: { name: 'a', tenantId: 't', clientId: 'shared', environment: 'P' },
+        b: { name: 'b', tenantId: 't', clientId: 'shared', environment: 'UAT' },
+      },
+    });
+
+    const credentials = await new ProfileStore(tmpDir).listCredentials();
+    expect(credentials.map((c) => c.name)).toEqual(['a', 'b']);
   });
 
   it('leaves a legacy file on disk until something actually changes it', async () => {
-    await mkdir(tmpDir, { recursive: true });
-    const file = path.join(tmpDir, 'profiles.json');
-    const original = JSON.stringify({
+    const file = await writeConfig({
       profiles: { legacy: { name: 'legacy', tenantId: 't', clientId: 'c', environment: 'P' } },
     });
-    await writeFile(file, original, 'utf8');
+    const original = await readFile(file, 'utf8');
 
     await new ProfileStore(tmpDir).listAll(); // a plain read must not rewrite
 
     expect(await readFile(file, 'utf8')).toBe(original);
   });
 
-  it('keeps an untouched profile readable by a navapi that predates `auth`', async () => {
+  it('keeps an untouched profile readable by the published 0.2.0', async () => {
     // Any write rewrites the whole file, so adding one profile must not strand
-    // the others in a shape an older navapi reads as clientId: undefined.
-    await mkdir(tmpDir, { recursive: true });
-    const file = path.join(tmpDir, 'profiles.json');
-    await writeFile(
-      file,
-      JSON.stringify({
-        profiles: {
-          legacy: { name: 'legacy', tenantId: 't', clientId: 'old-client', environment: 'P' },
-        },
-      }),
-      'utf8',
-    );
-
-    const store = new ProfileStore(tmpDir);
-    await store.upsert({
-      name: 'other',
-      tenantId: 't2',
-      auth: { type: 'azureCli' },
-      environment: 'Sandbox',
+    // the others in a shape 0.2.0 reads as clientId: undefined.
+    const file = await writeConfig({
+      profiles: {
+        legacy: { name: 'legacy', tenantId: 't', clientId: 'old-client', environment: 'P' },
+      },
     });
 
-    const written = JSON.parse(await readFile(file, 'utf8'));
-    expect(written.profiles.legacy.clientId).toBe('old-client');
-    expect(written.profiles.legacy.auth).toEqual({ type: 'clientSecret', clientId: 'old-client' });
-    // az-cli profiles have no client ID to write back.
-    expect(written.profiles.other.clientId).toBeUndefined();
-  });
-
-  it('accepts a profile handed in without `auth`, the way older embedders build one', async () => {
-    // upsert is public and ProfileConfig only gained `auth` here, so callers
-    // outside this package still pass the top-level clientId literal. Reading
-    // profile.auth.type unguarded threw a TypeError and broke every MCP test.
     const store = new ProfileStore(tmpDir);
-    await store.upsert({
-      name: 'embedded',
-      tenantId: 't',
-      clientId: 'c',
-      environment: 'Sandbox',
-    } as unknown as ProfileConfig);
+    await store.upsertWithCredential(
+      { name: 'other', tenantId: 't2', environment: 'Sandbox' },
+      { name: 'other', type: 'azureCli' },
+    );
 
-    const written = JSON.parse(await readFile(path.join(tmpDir, 'profiles.json'), 'utf8'));
-    expect(written.profiles.embedded.auth).toEqual({ type: 'clientSecret', clientId: 'c' });
-    expect(written.profiles.embedded.clientId).toBe('c');
-    expect((await store.get('embedded')).auth).toEqual({ type: 'clientSecret', clientId: 'c' });
+    const written = JSON.parse(await readFile(file, 'utf8'));
+    expect(written.version).toBe(CONFIG_VERSION);
+    expect(written.profiles.legacy.clientId).toBe('old-client');
+    expect(written.profiles.legacy.credential).toBe('legacy');
+    expect(written.credentials.legacy).toEqual({
+      name: 'legacy',
+      type: 'clientSecret',
+      clientId: 'old-client',
+    });
+    // az-cli credentials have no client ID to write back.
+    expect(written.profiles.other.clientId).toBeUndefined();
   });
 
   it('gives a friendly error when nothing is configured', async () => {
     const store = new ProfileStore(tmpDir);
     await expect(store.get()).rejects.toThrow(/navapi profile add/);
+  });
+
+  it('names the missing credential when a profile points at nothing', async () => {
+    await writeConfig({
+      version: 2,
+      credentials: {},
+      profiles: { orphan: { name: 'orphan', credential: 'gone', tenantId: 't', environment: 'P' } },
+      defaultProfile: 'orphan',
+    });
+
+    await expect(new ProfileStore(tmpDir).resolve('orphan')).rejects.toThrow(
+      /navapi credential add gone/,
+    );
   });
 });
 
@@ -340,7 +423,7 @@ describe('config file writes', () => {
   });
 
   it('leaves no temp files behind', async () => {
-    await new ProfileStore(tmpDir).upsert(PROFILE);
+    await new ProfileStore(tmpDir).upsertWithCredential(PROFILE, CREDENTIAL);
     await new FileSecretStore(tmpDir).set('contoso', 'hunter2');
     const { readdir } = await import('node:fs/promises');
     expect((await readdir(tmpDir)).filter((f) => f.endsWith('.tmp'))).toEqual([]);

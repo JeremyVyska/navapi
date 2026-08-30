@@ -83,7 +83,7 @@ export function registerCrud(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (entitySet: string, id: string | undefined, opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const client = await createClient(globals.profile);
+      const client = await createClient(globals);
       const scope = { route: opts.route, company: opts.company };
       const key = await resolveRecordKey(id, opts.key);
 
@@ -154,7 +154,7 @@ export function registerCrud(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (entitySet: string, opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const client = await createClient(globals.profile);
+      const client = await createClient(globals);
       const body = await readBody(opts.body);
       const created = await client.create(entitySet, body, {
         route: opts.route,
@@ -178,7 +178,7 @@ export function registerCrud(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (entitySet: string, id: string | undefined, opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const client = await createClient(globals.profile);
+      const client = await createClient(globals);
       const key = await resolveRecordKey(id, opts.key);
       if (!key) throw new NavApiError('Patch requires a positional id or --key.');
       const fromBody = opts.body ? await readBody(opts.body) : {};
@@ -219,7 +219,7 @@ export function registerCrud(program: Command): void {
           return;
         }
       }
-      const client = await createClient(globals.profile);
+      const client = await createClient(globals);
       await client.deleteRecord(entitySet, key, { route: opts.route, company: opts.company });
       console.log(pc.green(`✔ deleted ${entitySet}(${keyLabel})`));
     });
@@ -230,7 +230,7 @@ export function registerCrud(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const client = await createClient(globals.profile);
+      const client = await createClient(globals);
       const companies = await client.listCompanies();
       if (wantJson(opts.json)) emitJson(companies);
       else printTable(companies, ['name', 'displayName', 'id']);

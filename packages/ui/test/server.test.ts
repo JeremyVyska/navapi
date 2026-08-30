@@ -195,6 +195,54 @@ describe('UI server security and lifecycle', () => {
 });
 
 describe('UI API flows', () => {
+  it('edits the credential a profile already uses instead of minting a new one', async () => {
+    await writeFile(
+      path.join(configDir, 'profiles.json'),
+      JSON.stringify({
+        version: 2,
+        credentials: {
+          'contoso-app': { name: 'contoso-app', type: 'clientSecret', clientId: 'c1' },
+        },
+        profiles: {
+          prod: {
+            name: 'prod',
+            credential: 'contoso-app',
+            tenantId: 'tenant',
+            environment: 'Production',
+          },
+        },
+        defaultProfile: 'prod',
+      }),
+      'utf8',
+    );
+    const server = await start();
+
+    const save = await request(server, '/api/profiles', {
+      method: 'POST',
+      body: JSON.stringify({
+        profile: {
+          name: 'prod',
+          tenantId: 'tenant',
+          clientId: 'c2',
+          clientSecret: 'rotated',
+          environment: 'Production',
+        },
+        originalName: 'prod',
+      }),
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(save.status).toBe(200);
+
+    const after = JSON.parse(await readFile(path.join(configDir, 'profiles.json'), 'utf8'));
+    // the existing credential is updated in place; no "prod" credential appears
+    expect(Object.keys(after.credentials)).toEqual(['contoso-app']);
+    expect(after.credentials['contoso-app'].clientId).toBe('c2');
+    expect(after.profiles.prod.credential).toBe('contoso-app');
+    // and the rotated secret lands under the credential's key
+    const secrets = JSON.parse(await readFile(path.join(configDir, 'secrets.json'), 'utf8'));
+    expect(secrets['contoso-app']).toBe('rotated');
+  });
+
   it('keeps a read-only profile read-only when saved from the web form', async () => {
     await writeFile(
       path.join(configDir, 'profiles.json'),

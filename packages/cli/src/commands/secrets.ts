@@ -10,29 +10,31 @@ import { configDir, profileStore, secretStore } from '../context.js';
 import { emitJson, printTable, wantJson } from '../output.js';
 
 interface SecretLocation {
-  profile: string;
-  /** Writes are refused on this profile. A guardrail, not a security boundary. */
-  readOnly: boolean;
-  /** False for az-cli profiles, which authenticate without a stored secret. */
+  credential: string;
+  /** Profiles backed by this credential; empty means nothing uses it. */
+  usedBy: string[];
+  /** False for az-cli credentials, which authenticate without a stored secret. */
   secretRequired: boolean;
   keychain: boolean;
   file: boolean;
 }
 
 async function locateSecrets(): Promise<{ keychainAvailable: boolean; rows: SecretLocation[] }> {
-  const { profiles } = await profileStore().listAll();
+  const { credentials, profiles } = await profileStore().listAll();
   const file = new FileSecretStore(configDir());
   const factory = await loadKeyringFactory();
   const usable = factory && secretServiceAvailable();
   const keychain = usable ? new KeychainSecretStore(factory) : undefined;
   const rows: SecretLocation[] = [];
-  for (const p of profiles) {
+  // Secrets belong to credentials, not profiles — one row per credential, with
+  // the profiles it backs, so a shared credential reads as one secret.
+  for (const c of credentials) {
     rows.push({
-      profile: p.name,
-      readOnly: Boolean(p.readOnly),
-      secretRequired: p.auth.type !== 'azureCli',
-      keychain: keychain ? (await keychain.get(p.name)) !== undefined : false,
-      file: (await file.get(p.name)) !== undefined,
+      credential: c.name,
+      usedBy: profiles.filter((p) => p.credential === c.name).map((p) => p.name),
+      secretRequired: c.type !== 'azureCli',
+      keychain: keychain ? (await keychain.get(c.name)) !== undefined : false,
+      file: (await file.get(c.name)) !== undefined,
     });
   }
   return { keychainAvailable: Boolean(keychain), rows };
@@ -69,15 +71,15 @@ export function registerSecrets(program: Command): void {
       console.log(`Backend: ${pc.bold(backend)}`);
       printTable(
         rows.map((r) => ({
-          profile: r.profile,
+          credential: r.credential,
           auth: r.secretRequired ? 'app registration' : 'Azure CLI',
-          // An az-cli profile has nothing stored anywhere, which would
+          'used by': r.usedBy.join(', ') || pc.dim('(unused)'),
+          // An az-cli credential has nothing stored anywhere, which would
           // otherwise read as a secret that has gone missing.
           keychain: r.keychain ? '✔' : r.secretRequired ? '' : pc.dim('no secret required'),
           'plaintext file': r.file ? pc.yellow('⚠ yes') : '',
-          access: r.readOnly ? pc.yellow('read-only') : '',
         })),
-        ['profile', 'auth', 'keychain', 'plaintext file', 'access'],
+        ['credential', 'auth', 'used by', 'keychain', 'plaintext file'],
       );
       if (rows.some((r) => r.file) && keychainAvailable) {
         console.log(pc.dim('Run "navapi secrets migrate" to move file secrets into the keychain.'));

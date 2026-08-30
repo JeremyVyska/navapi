@@ -12,6 +12,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
   name, route, and entity type, then opens the records grid for the one you
   pick. The search runs against the on-disk cache; opening the grid fetches
   the first page, the same as clicking the entity set in the tree.
+- **Credentials are their own thing.** A profile now references a named
+  credential instead of embedding one, so several profiles can share a single
+  app registration and a single stored secret. The profile form says when the
+  credential you are editing is shared, and with which profiles, before you
+  change it. Existing profiles migrate on read, and their secrets stay where
+  they are.
 - **Read-only profiles.** A checkbox on the profile form marks a profile
   read-only, and every write through it is refused — create, update, delete,
   bound actions, and writes inside a `$batch`. A guardrail against an

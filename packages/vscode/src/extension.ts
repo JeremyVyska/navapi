@@ -56,10 +56,16 @@ async function resolveProfileName(node?: ProfileNode): Promise<string> {
 
 async function editProfileFlow(ui: Ui, node: ProfileNode): Promise<void> {
   const dir = defaultConfigDir();
-  const profile = await new ProfileStore(dir).get(node.profileName);
+  const profileStore = new ProfileStore(dir);
+  const profile = await profileStore.resolve(node.profileName);
   const { store } = await resolveSecretStore(dir);
-  const hasSecret = Boolean(await store.get(node.profileName));
-  ProfileFormPanel.show(() => void ui.refresh(), profile, hasSecret);
+  // Secrets are keyed by credential, not profile.
+  const hasSecret = Boolean(await store.get(profile.credential));
+  const { profiles } = await profileStore.listAll();
+  const sharedWith = profiles
+    .filter((p) => p.credential === profile.credential && p.name !== profile.name)
+    .map((p) => p.name);
+  ProfileFormPanel.show(() => void ui.refresh(), profile, hasSecret, sharedWith);
 }
 
 async function useProfileFlow(ui: Ui, node: ProfileNode): Promise<void> {

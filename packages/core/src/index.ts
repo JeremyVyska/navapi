@@ -68,7 +68,15 @@ export {
   PreconditionFailedError,
   toHttpError,
 } from './errors.js';
-export { type CreateClientOptions, createClientForProfile } from './factory.js';
+export {
+  type ClientSelector,
+  type CreateClientForTargetOptions,
+  type CreateClientOptions,
+  createClientForProfile,
+  createClientForSelector,
+  createClientForTarget,
+  targetLabel,
+} from './factory.js';
 export { BcHttp, type BcHttpOptions, type BcResponse, type RequestOptions } from './http.js';
 export { parseMetadata } from './metadata.js';
 export {
@@ -92,6 +100,7 @@ export {
   sortProfiles,
 } from './presentation.js';
 export {
+  CONFIG_VERSION,
   FileSecretStore,
   KeychainSecretStore,
   type KeyringEntry,
@@ -118,12 +127,15 @@ export type {
   ApiRoute,
   BcRecord,
   CachedRouteMetadata,
+  Credential,
+  CredentialType,
   EntitySetInfo,
   NavigationPropertyInfo,
-  ProfileAuth,
   ProfileConfig,
   PropertyInfo,
+  ResolvedProfile,
   RouteDiscoveryResult,
   RouteMetadata,
   StoredProfile,
+  TargetContext,
 } from './types.js';

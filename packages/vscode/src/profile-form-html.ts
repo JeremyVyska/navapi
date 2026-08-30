@@ -5,6 +5,10 @@
 export interface ProfileFormValues {
   name: string;
   tenantId: string;
+  /** Credential this profile authenticates with; blank means "mint one named after the profile". */
+  credential: string;
+  /** Other profiles sharing that credential — editing the identity changes them too. */
+  sharedWith: string[];
   authType: 'clientSecret' | 'azureCli';
   clientId: string;
   clientSecret: string;
@@ -109,6 +113,8 @@ export function renderFormHtml(init: FormInit, nonce: string): string {
   <label for="baseUrl">API base URL <span class="hint">— optional, for sovereign clouds</span></label>
   <input id="baseUrl" placeholder="https://api.businesscentral.dynamics.com">
 
+  <p id="sharedNote" class="hint hidden"></p>
+
   <label class="check">
     <input id="readOnly" type="checkbox">
     <span>Read-only — refuse every write through this profile</span>
@@ -140,6 +146,15 @@ export function renderFormHtml(init: FormInit, nonce: string): string {
     el('save').textContent = init.mode === 'edit' ? 'Save Changes' : 'Save Profile';
     for (const f of FIELDS) el(f).value = init.values[f];
     el('readOnly').checked = Boolean(init.values.readOnly);
+    // Say so before someone changes an identity that several profiles use.
+    if ((init.values.sharedWith || []).length) {
+      const note = el('sharedNote');
+      note.textContent =
+        'Credential "' + init.values.credential + '" is also used by ' +
+        init.values.sharedWith.join(', ') +
+        '. Changing the client ID, secret, or identity here changes it for those profiles too.';
+      note.classList.remove('hidden');
+    }
     if (init.mode === 'edit') {
       el('name').readOnly = true;
       if (init.hasStoredSecret) el('clientSecret').placeholder = '(unchanged — leave blank to keep)';
@@ -207,6 +222,8 @@ export function renderFormHtml(init: FormInit, nonce: string): string {
       const out = {};
       for (const f of FIELDS) out[f] = el(f).value.trim();
       out.readOnly = el('readOnly').checked;
+      out.credential = init.values.credential;
+      out.sharedWith = init.values.sharedWith || [];
       return out;
     }
 

@@ -12,7 +12,7 @@ import {
 } from '@navapi/core';
 import type { Command } from 'commander';
 import pc from 'picocolors';
-import { createClient } from '../context.js';
+import { type ClientSelector, createClient } from '../context.js';
 import { readJsonSource } from '../json-input.js';
 import { emitJson, printRecord, printTable, wantJson } from '../output.js';
 import { confirm } from '../prompt.js';
@@ -22,8 +22,8 @@ function collect(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
 
-async function braiderFor(profileName: string | undefined): Promise<BraiderClientType> {
-  const client = await createClient(profileName);
+async function braiderFor(selector: ClientSelector): Promise<BraiderClientType> {
+  const client = await createClient(selector);
   const info = await detectBraider(client);
   if (!info) {
     throw new NavApiError(
@@ -77,7 +77,7 @@ export function registerBraider(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const client = await createClient(globals.profile);
+      const client = await createClient(globals);
       const info = await detectBraider(client, { refresh: opts.refresh });
       if (wantJson(opts.json)) {
         emitJson(info ? { installed: true, ...info } : { installed: false });
@@ -106,7 +106,7 @@ export function registerBraider(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const bc = await braiderFor(globals.profile);
+      const bc = await braiderFor(globals);
       const endpoints = await bc.listEndpoints({ company: opts.company });
       if (wantJson(opts.json)) {
         emitJson(endpoints);
@@ -142,7 +142,7 @@ export function registerBraider(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (code: string, opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const bc = await braiderFor(globals.profile);
+      const bc = await braiderFor(globals);
       const result = await bc.readEndpoint(code, {
         filters: await gatherFilters(opts),
         pageStart: opts.pageStart,
@@ -203,7 +203,7 @@ export function registerBraider(program: Command): void {
           return;
         }
       }
-      const bc = await braiderFor(globals.profile);
+      const bc = await braiderFor(globals);
       const results = await bc.writeEndpoint(code, records, {
         defaultAction: opts.action as BraiderWriteAction | undefined,
         company: opts.company,
@@ -229,7 +229,7 @@ export function registerBraider(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (code: string, opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const bc = await braiderFor(globals.profile);
+      const bc = await braiderFor(globals);
       const schema = await bc.getEndpointSchema(code, { company: opts.company });
       if (wantJson(opts.json)) {
         emitJson(schema);
@@ -279,7 +279,7 @@ export function registerBraider(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (search: string | undefined, opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const bc = await braiderFor(globals.profile);
+      const bc = await braiderFor(globals);
       const tables = await bc.listAvailableTables({ search, company: opts.company });
       if (wantJson(opts.json)) emitJson(tables);
       else printTable(tables, ['tableNo', 'name', 'caption']);
@@ -292,7 +292,7 @@ export function registerBraider(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (tableNo: string, opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const bc = await braiderFor(globals.profile);
+      const bc = await braiderFor(globals);
       const fields = await bc.listAvailableFields(Number(tableNo), { company: opts.company });
       if (wantJson(opts.json)) emitJson(fields);
       else printTable(fields, ['fieldNo', 'name', 'caption', 'type', 'isPartOfPrimaryKey']);
@@ -309,7 +309,7 @@ export function registerBraider(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const bc = await braiderFor(globals.profile);
+      const bc = await braiderFor(globals);
       const configs = await bc.listEndpointConfigs({ company: opts.company });
       if (wantJson(opts.json)) emitJson(configs);
       else printTable(configs, ['code', 'description', 'endpointType', 'enabled']);
@@ -323,7 +323,7 @@ export function registerBraider(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (code: string, opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const bc = await braiderFor(globals.profile);
+      const bc = await braiderFor(globals);
       const cfg = await bc.getEndpointConfig(code, {
         includeLines: true,
         allFields: opts.allFields,
@@ -363,7 +363,7 @@ export function registerBraider(program: Command): void {
     .action(async (opts, cmd) => {
       const globals = cmd.optsWithGlobals();
       const spec = (await readJsonSource(opts.body)) as BraiderEndpointSpec;
-      const bc = await braiderFor(globals.profile);
+      const bc = await braiderFor(globals);
       const created = await bc.createEndpoint(spec, { company: opts.company });
       if (wantJson(opts.json)) emitJson(created);
       else {
@@ -389,7 +389,7 @@ export function registerBraider(program: Command): void {
       if (!Object.keys(patch).length) {
         throw new NavApiError('Nothing to update. Use --set key=value or --body.');
       }
-      const bc = await braiderFor(globals.profile);
+      const bc = await braiderFor(globals);
       const updated = await bc.updateEndpoint(code, patch, { company: opts.company });
       if (wantJson(opts.json)) emitJson(updated);
       else {
@@ -414,7 +414,7 @@ export function registerBraider(program: Command): void {
           return;
         }
       }
-      const bc = await braiderFor(globals.profile);
+      const bc = await braiderFor(globals);
       await bc.deleteEndpoint(code, { company: opts.company });
       console.log(pc.green(`✔ deleted endpoint "${code}"`));
     });

@@ -9,8 +9,9 @@ import {
   type BraiderWriteAction,
   type BraiderWriteRecord,
   type CachedRouteMetadata,
+  type ClientSelector,
   companyLabel,
-  createClientForProfile,
+  createClientForSelector,
   defaultConfigDir,
   detectBraider,
   findCompany,
@@ -21,15 +22,30 @@ import { z } from 'zod';
 
 export interface NavapiServerOptions {
   /** Injectable for tests; defaults to profile-based construction from disk config. */
-  clientFactory?: (profileName?: string) => Promise<BcClient>;
+  clientFactory?: (selector: ClientSelector) => Promise<BcClient>;
   profileStore?: ProfileStore;
 }
 
+/**
+ * How a tool call says where to run. A profile names a saved credential +
+ * tenant + environment; each of those can also be given directly, layered over
+ * the profile, so an agent can reach an environment nobody saved a profile for.
+ */
 const profileArg = {
   profile: z
     .string()
     .optional()
-    .describe('Profile name; omit for the default profile (one profile = one BC environment)'),
+    .describe(
+      'Profile name; omit for the default profile. A profile is a saved credential + tenant + environment.',
+    ),
+  credential: z
+    .string()
+    .optional()
+    .describe(
+      'Credential to authenticate with, overriding the profile. Combine with tenant/environment to reach an environment no profile is saved for.',
+    ),
+  tenant: z.string().optional().describe('Tenant to target, overriding the profile'),
+  environment: z.string().optional().describe('Environment to target, overriding the profile'),
 };
 
 const scopeArgs = {
@@ -103,14 +119,21 @@ async function ensureMetadata(
  */
 export function createNavapiServer(options: NavapiServerOptions = {}): McpServer {
   const clients = new Map<string, Promise<BcClient>>();
-  const factory = options.clientFactory ?? ((name?: string) => createClientForProfile(name));
   const store = options.profileStore ?? new ProfileStore(defaultConfigDir());
+  const factory = options.clientFactory ?? ((sel: ClientSelector) => createClientForSelector(sel));
 
-  function getClient(profileName?: string): Promise<BcClient> {
-    const key = profileName ?? '';
+  function getClient(selector: ClientSelector = {}): Promise<BcClient> {
+    // The overrides are part of a client's identity, so two calls naming
+    // different tenants must not share one cached client.
+    const key = [
+      selector.profile ?? '',
+      selector.credential ?? '',
+      selector.tenant ?? '',
+      selector.environment ?? '',
+    ].join('\u0000');
     let client = clients.get(key);
     if (!client) {
-      client = factory(profileName);
+      client = factory(selector);
       clients.set(key, client);
       // Don't cache failed constructions (bad secret, missing profile).
       client.catch(() => clients.delete(key));
@@ -125,20 +148,24 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
     'list_profiles',
     {
       description:
-        'List configured navapi profiles. Each profile pins one Business Central environment (tenant + environment + default company). A profile marked readOnly refuses every write — do not attempt create, update, delete, or actions against it.',
+        'List configured navapi profiles and credentials. A profile is a saved credential + tenant + environment; several profiles can share one credential. A profile marked readOnly refuses every write — do not attempt create, update, delete, or actions against it. To reach an environment with no saved profile, pass credential + tenant + environment to any tool.',
       inputSchema: {},
     },
     safe(async () => {
-      const { profiles, defaultProfile } = await store.listAll();
+      const { profiles, credentials, defaultProfile } = await store.listAll();
       return {
         defaultProfile,
-        profiles: profiles.map(({ name, tenantId, environment, company, readOnly }) => ({
-          name,
-          tenantId,
-          environment,
-          company,
-          readOnly: Boolean(readOnly),
-        })),
+        credentials: credentials.map(({ name, type }) => ({ name, type })),
+        profiles: profiles.map(
+          ({ name, tenantId, environment, company, credential, readOnly }) => ({
+            name,
+            tenantId,
+            environment,
+            company,
+            credential,
+            readOnly: Boolean(readOnly),
+          }),
+        ),
       };
     }),
   );
@@ -153,8 +180,8 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         company: z.string().describe('Company name, displayName, or GUID'),
       },
     },
-    safe(async ({ profile, company }) => {
-      const client = await getClient(profile);
+    safe(async ({ profile, company, ...sel }) => {
+      const client = await getClient({ profile, ...sel });
       const companies = await client.listCompanies();
       const match = findCompany(companies, company);
       if (!match) {
@@ -180,7 +207,7 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         'List every endpoint group the BC environment exposes: API routes plus ODataV4 when published web services are available.',
       inputSchema: profileArg,
     },
-    safe(async ({ profile }) => (await getClient(profile)).listRoutes()),
+    safe(async ({ profile, ...sel }) => (await getClient({ profile, ...sel })).listRoutes()),
   );
 
   server.registerTool(
@@ -200,8 +227,8 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         refresh: z.boolean().optional().describe('Refetch $metadata from the environment'),
       },
     },
-    safe(async ({ profile, route, search, refresh }) => {
-      const client = await getClient(profile);
+    safe(async ({ profile, route, search, refresh, ...sel }) => {
+      const client = await getClient({ profile, ...sel });
       const { cached, errors } = await ensureMetadata(client, refresh);
       const scoped = route ? cached.filter((c) => c.routePath === route) : cached;
       const routes = scoped
@@ -231,8 +258,8 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         route: z.string().optional().describe('Route to search; omit to search all cached routes'),
       },
     },
-    safe(async ({ profile, entitySet, route }) => {
-      const client = await getClient(profile);
+    safe(async ({ profile, entitySet, route, ...sel }) => {
+      const client = await getClient({ profile, ...sel });
       const { cached } = await ensureMetadata(client);
       const scoped = route ? cached.filter((c) => c.routePath === route) : cached;
       const matches = scoped.flatMap((c) =>
@@ -283,22 +310,38 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
           .describe('Also request $count=true and return the total matching records'),
       },
     },
-    safe(async ({ profile, entitySet, route, company, all, includeCount, pageSize, ...rest }) => {
-      const client = await getClient(profile);
-      const query = { ...rest, count: includeCount || undefined };
-      const opts = { route, company, all, query, maxPageSize: pageSize };
-      const [result, queryUrl] = await Promise.all([
-        client.list(entitySet, opts),
-        client.buildListUrl(entitySet, opts),
-      ]);
-      return {
-        items: result.items,
-        hasMore: Boolean(result.nextLink),
-        nextLink: result.nextLink,
-        count: result.count,
-        queryUrl,
-      };
-    }),
+    // The selector fields are named explicitly here: `rest` becomes the OData
+    // query, and credential/tenant/environment must not leak into it.
+    safe(
+      async ({
+        profile,
+        credential,
+        tenant,
+        environment,
+        entitySet,
+        route,
+        company,
+        all,
+        includeCount,
+        pageSize,
+        ...rest
+      }) => {
+        const client = await getClient({ profile, credential, tenant, environment });
+        const query = { ...rest, count: includeCount || undefined };
+        const opts = { route, company, all, query, maxPageSize: pageSize };
+        const [result, queryUrl] = await Promise.all([
+          client.list(entitySet, opts),
+          client.buildListUrl(entitySet, opts),
+        ]);
+        return {
+          items: result.items,
+          hasMore: Boolean(result.nextLink),
+          nextLink: result.nextLink,
+          count: result.count,
+          queryUrl,
+        };
+      },
+    ),
   );
 
   server.registerTool(
@@ -311,8 +354,8 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         nextLink: z.string().describe('The @odata.nextLink from a previous get_records call'),
       },
     },
-    safe(async ({ profile, nextLink }) => {
-      const page = await (await getClient(profile)).followNextLink(nextLink);
+    safe(async ({ profile, nextLink, ...sel }) => {
+      const page = await (await getClient({ profile, ...sel })).followNextLink(nextLink);
       return { items: page.items, hasMore: Boolean(page.nextLink), nextLink: page.nextLink };
     }),
   );
@@ -329,8 +372,11 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         navProperty: z.string().describe('Navigation property name, e.g. "salesOrderLines"'),
       },
     },
-    safe(async ({ profile, entitySet, id, navProperty, route, company }) =>
-      (await getClient(profile)).getNavigation(entitySet, id, navProperty, { route, company }),
+    safe(async ({ profile, entitySet, id, navProperty, route, company, ...sel }) =>
+      (await getClient({ profile, ...sel })).getNavigation(entitySet, id, navProperty, {
+        route,
+        company,
+      }),
     ),
   );
 
@@ -344,8 +390,8 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         id: recordKey.describe('Scalar record key or named key object for composite OData keys'),
       },
     },
-    safe(async ({ profile, entitySet, id, route, company }) =>
-      (await getClient(profile)).getRecord(entitySet, id, { route, company }),
+    safe(async ({ profile, entitySet, id, route, company, ...sel }) =>
+      (await getClient({ profile, ...sel })).getRecord(entitySet, id, { route, company }),
     ),
   );
 
@@ -360,8 +406,8 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         record: z.record(z.unknown()).describe('Field values for the new record'),
       },
     },
-    safe(async ({ profile, entitySet, record, route, company }) =>
-      (await getClient(profile)).create(entitySet, record, { route, company }),
+    safe(async ({ profile, entitySet, record, route, company, ...sel }) =>
+      (await getClient({ profile, ...sel })).create(entitySet, record, { route, company }),
     ),
   );
 
@@ -377,8 +423,8 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         patch: z.record(z.unknown()).describe('Fields to change'),
       },
     },
-    safe(async ({ profile, entitySet, id, patch, route, company }) =>
-      (await getClient(profile)).update(entitySet, id, patch, { route, company }),
+    safe(async ({ profile, entitySet, id, patch, route, company, ...sel }) =>
+      (await getClient({ profile, ...sel })).update(entitySet, id, patch, { route, company }),
     ),
   );
 
@@ -393,8 +439,8 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         id: recordKey.describe('Scalar record key or named key object for composite OData keys'),
       },
     },
-    safe(async ({ profile, entitySet, id, route, company }) => {
-      await (await getClient(profile)).deleteRecord(entitySet, id, { route, company });
+    safe(async ({ profile, entitySet, id, route, company, ...sel }) => {
+      await (await getClient({ profile, ...sel })).deleteRecord(entitySet, id, { route, company });
       return { deleted: true, entitySet, id };
     }),
   );
@@ -412,12 +458,17 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         parameters: z.record(z.unknown()).optional().describe('Action parameter object'),
       },
     },
-    safe(async ({ profile, entitySet, id, action, parameters, route, company }) => {
-      const result = await (await getClient(profile)).callAction(entitySet, id, action, {
-        route,
-        company,
-        parameters,
-      });
+    safe(async ({ profile, entitySet, id, action, parameters, route, company, ...sel }) => {
+      const result = await (await getClient({ profile, ...sel })).callAction(
+        entitySet,
+        id,
+        action,
+        {
+          route,
+          company,
+          parameters,
+        },
+      );
       return result ?? { ok: true, action, entitySet, id };
     }),
   );
@@ -444,8 +495,8 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
           .min(1),
       },
     },
-    safe(async ({ profile, requests, route, company }) =>
-      (await getClient(profile)).batch(requests as BatchRequest[], { route, company }),
+    safe(async ({ profile, requests, route, company, ...sel }) =>
+      (await getClient({ profile, ...sel })).batch(requests as BatchRequest[], { route, company }),
     ),
   );
 
@@ -453,12 +504,17 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
 
   const braiderClients = new Map<string, Promise<BraiderClient>>();
 
-  function getBraider(profileName?: string): Promise<BraiderClient> {
-    const key = profileName ?? '';
+  function getBraider(selector: ClientSelector = {}): Promise<BraiderClient> {
+    const key = [
+      selector.profile ?? '',
+      selector.credential ?? '',
+      selector.tenant ?? '',
+      selector.environment ?? '',
+    ].join(' ');
     let braider = braiderClients.get(key);
     if (!braider) {
       braider = (async () => {
-        const client = await getClient(profileName);
+        const client = await getClient(selector);
         const info = await detectBraider(client);
         if (!info) {
           throw new Error(
@@ -495,8 +551,8 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         refresh: z.boolean().optional().describe('Re-enumerate routes and refetch metadata'),
       },
     },
-    safe(async ({ profile, refresh }) => {
-      const client = await getClient(profile);
+    safe(async ({ profile, refresh, ...sel }) => {
+      const client = await getClient({ profile, ...sel });
       const info = await detectBraider(client, { refresh });
       if (refresh) braiderClients.clear();
       return info ? { installed: true, ...info } : { installed: false };
@@ -513,7 +569,9 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         company: z.string().optional().describe('Company override for this call'),
       },
     },
-    safe(async ({ profile, company }) => (await getBraider(profile)).listEndpoints({ company })),
+    safe(async ({ profile, company, ...sel }) =>
+      (await getBraider({ profile, ...sel })).listEndpoints({ company }),
+    ),
   );
 
   server.registerTool(
@@ -536,8 +594,18 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
       },
     },
     safe(
-      async ({ profile, company, code, filters, pageStart, pageSize, all, includeDiagnostics }) => {
-        const braider = await getBraider(profile);
+      async ({
+        profile,
+        company,
+        code,
+        filters,
+        pageStart,
+        pageSize,
+        all,
+        includeDiagnostics,
+        ...sel
+      }) => {
+        const braider = await getBraider({ profile, ...sel });
         const result = await braider.readEndpoint(code, {
           company,
           filters: filters as BraiderFilter[] | undefined,
@@ -576,8 +644,8 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
           .describe('Action applied to records without their own'),
       },
     },
-    safe(async ({ profile, company, code, records, defaultAction }) =>
-      (await getBraider(profile)).writeEndpoint(code, records as BraiderWriteRecord[], {
+    safe(async ({ profile, company, code, records, defaultAction, ...sel }) =>
+      (await getBraider({ profile, ...sel })).writeEndpoint(code, records as BraiderWriteRecord[], {
         company,
         defaultAction: defaultAction as BraiderWriteAction | undefined,
       }),
@@ -595,8 +663,8 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         code: z.string().describe('Endpoint code'),
       },
     },
-    safe(async ({ profile, company, code }) =>
-      (await getBraider(profile)).getEndpointSchema(code, { company }),
+    safe(async ({ profile, company, code, ...sel }) =>
+      (await getBraider({ profile, ...sel })).getEndpointSchema(code, { company }),
     ),
   );
 
@@ -611,8 +679,8 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         search: z.string().optional().describe('Substring to match in table name or caption'),
       },
     },
-    safe(async ({ profile, company, search }) =>
-      (await getBraider(profile)).listAvailableTables({ company, search }),
+    safe(async ({ profile, company, search, ...sel }) =>
+      (await getBraider({ profile, ...sel })).listAvailableTables({ company, search }),
     ),
   );
 
@@ -627,8 +695,8 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         tableNo: z.number().int().describe('Table number, e.g. 18 for Customer'),
       },
     },
-    safe(async ({ profile, company, tableNo }) =>
-      (await getBraider(profile)).listAvailableFields(tableNo, { company }),
+    safe(async ({ profile, company, tableNo, ...sel }) =>
+      (await getBraider({ profile, ...sel })).listAvailableFields(tableNo, { company }),
     ),
   );
 
@@ -678,8 +746,10 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
           .describe('Endpoint specification'),
       },
     },
-    safe(async ({ profile, company, spec }) =>
-      (await getBraider(profile)).createEndpoint(spec as BraiderEndpointSpec, { company }),
+    safe(async ({ profile, company, spec, ...sel }) =>
+      (await getBraider({ profile, ...sel })).createEndpoint(spec as BraiderEndpointSpec, {
+        company,
+      }),
     ),
   );
 
@@ -697,10 +767,14 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
           .describe('Config header fields to change, e.g. {"enabled": true}'),
       },
     },
-    safe(async ({ profile, company, code, patch }) =>
-      (await getBraider(profile)).updateEndpoint(code, patch as Record<string, unknown>, {
-        company,
-      }),
+    safe(async ({ profile, company, code, patch, ...sel }) =>
+      (await getBraider({ profile, ...sel })).updateEndpoint(
+        code,
+        patch as Record<string, unknown>,
+        {
+          company,
+        },
+      ),
     ),
   );
 
@@ -715,8 +789,8 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
         code: z.string().describe('Endpoint code'),
       },
     },
-    safe(async ({ profile, company, code }) => {
-      await (await getBraider(profile)).deleteEndpoint(code, { company });
+    safe(async ({ profile, company, code, ...sel }) => {
+      await (await getBraider({ profile, ...sel })).deleteEndpoint(code, { company });
       return { deleted: true, code };
     }),
   );

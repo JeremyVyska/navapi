@@ -34,7 +34,7 @@ export function registerCompany(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const client = await createClient(globals.profile);
+      const client = await createClient(globals);
       const companies = await client.listCompanies();
       if (wantJson(opts.json)) {
         emitJson(companies);
@@ -62,7 +62,7 @@ export function registerCompany(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (name: string | undefined, opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const client = await createClient(globals.profile);
+      const client = await createClient(globals);
       const companies = await client.listCompanies();
 
       let target: BcRecord | undefined;

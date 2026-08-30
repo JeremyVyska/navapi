@@ -76,7 +76,7 @@ export function registerDiscover(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (term: string | undefined, opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const client = await createClient(globals.profile);
+      const client = await createClient(globals);
       warnIfNoCompany(client.profile.company);
 
       let cached: CachedRouteMetadata[];
@@ -157,7 +157,7 @@ export function registerDiscover(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (route: string | undefined, opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const client = await createClient(globals.profile);
+      const client = await createClient(globals);
       let cached = await client.cachedMetadata();
       if (!cached.length) {
         // Nothing ingested yet — run discovery once, then browse.
@@ -183,7 +183,7 @@ export function registerDiscover(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const client = await createClient(globals.profile);
+      const client = await createClient(globals);
       warnIfNoCompany(client.profile.company);
       const routes = await client.listRoutes();
       if (wantJson(opts.json)) {

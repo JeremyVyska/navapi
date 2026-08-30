@@ -245,10 +245,13 @@ describe('navapi MCP server', () => {
         tenantId: 'tenant-1',
         environment: 'Sandbox',
         company: 'CRONUS',
+        // a legacy-shaped upsert mints a credential named after the profile
+        credential: 'test',
         // surfaced so an agent can see the guardrail before attempting a write
         readOnly: false,
       },
     ]);
+    expect(data.credentials).toEqual([{ name: 'test', type: 'clientSecret' }]);
   });
 
   it('list_entities discovers, caches, and returns the collection tree', async () => {
@@ -575,5 +578,98 @@ describe('navapi MCP server — Data Braider', () => {
     });
     expect(result.isError).toBe(true);
     expect((result.content as { text: string }[])[0].text).toContain('config API');
+  });
+});
+
+describe('navapi MCP server — credential and target selection', () => {
+  /** Captures what each tool call asked the factory to build. */
+  async function serverRecordingSelectors() {
+    const seen: Record<string, unknown>[] = [];
+    const cache = new MetadataCache(path.join(tmpDir, 'cache'));
+    const store = new ProfileStore(tmpDir);
+    await store.upsert({
+      name: 'test',
+      tenantId: 'tenant-1',
+      clientId: 'c',
+      environment: 'Sandbox',
+      company: 'CRONUS',
+    });
+    const server = createNavapiServer({
+      profileStore: store,
+      clientFactory: async (selector) => {
+        seen.push({ ...selector });
+        return new BcClient({
+          profile: {
+            name: 'test',
+            tenantId: 'tenant-1',
+            credential: 'test',
+            environment: 'Sandbox',
+            company: 'CRONUS',
+          },
+          auth: new StaticTokenProvider('tok'),
+          fetch: fakeFetch(),
+          cache,
+        });
+      },
+    });
+    const client = new Client({ name: 'test', version: '0' });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(a), client.connect(b)]);
+    return { client, seen };
+  }
+
+  it('passes credential, tenant, and environment through to the client factory', async () => {
+    const { client, seen } = await serverRecordingSelectors();
+
+    await client.callTool({
+      name: 'get_records',
+      arguments: {
+        entitySet: 'customers',
+        credential: 'contoso-app',
+        tenant: 'other-tenant',
+        environment: 'Production',
+      },
+    });
+
+    expect(seen[0]).toMatchObject({
+      credential: 'contoso-app',
+      tenant: 'other-tenant',
+      environment: 'Production',
+    });
+  });
+
+  it('does not leak the selector fields into the OData query', async () => {
+    const { client } = await serverRecordingSelectors();
+
+    const result = parseText(
+      await client.callTool({
+        name: 'get_records',
+        arguments: {
+          entitySet: 'customers',
+          credential: 'contoso-app',
+          tenant: 'other-tenant',
+          environment: 'Production',
+        },
+      }),
+    );
+
+    // get_records spreads its unnamed args into $-query params; the selector
+    // fields must not travel there. (The tenant legitimately appears in the
+    // URL *path*, so only the query string is checked.)
+    const query = new URL(result.queryUrl).search;
+    expect(query).not.toContain('credential');
+    expect(query).not.toContain('tenant');
+    expect(query).not.toContain('environment');
+  });
+
+  it('keeps clients for different tenants apart in the cache', async () => {
+    const { client, seen } = await serverRecordingSelectors();
+
+    await client.callTool({ name: 'list_routes', arguments: { tenant: 'tenant-a' } });
+    await client.callTool({ name: 'list_routes', arguments: { tenant: 'tenant-b' } });
+    await client.callTool({ name: 'list_routes', arguments: { tenant: 'tenant-a' } });
+
+    // two distinct tenants built two clients; the repeat reused the first
+    expect(seen).toHaveLength(2);
   });
 });

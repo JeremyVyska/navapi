@@ -4,11 +4,12 @@ import {
   BcClient,
   type BcRecord,
   ClientCredentialsAuth,
+  type CredentialType,
   companyLabel,
   defaultConfigDir,
   listAzureCliAccounts,
-  type ProfileConfig,
   ProfileStore,
+  type ResolvedProfile,
   resolveSecretStore,
 } from '@navapi/core';
 import * as vscode from 'vscode';
@@ -27,9 +28,7 @@ async function testConnection(
     profile: {
       name: values.name || '__test__',
       tenantId: values.tenantId,
-      auth: isAzureCli(values)
-        ? { type: 'azureCli', account: values.azAccount || undefined }
-        : { type: 'clientSecret', clientId: values.clientId },
+      credential: values.credential || values.name || '__test__',
       environment: values.environment,
       baseUrl: values.baseUrl || undefined,
     },
@@ -51,23 +50,29 @@ async function testConnection(
  * fed by the environment's actual company list.
  */
 export class ProfileFormPanel {
-  static show(onSaved: () => void, existing?: ProfileConfig, hasStoredSecret = false): void {
-    new ProfileFormPanel(onSaved, existing, hasStoredSecret);
+  static show(
+    onSaved: () => void,
+    existing?: ResolvedProfile,
+    hasStoredSecret = false,
+    sharedWith: string[] = [],
+  ): void {
+    new ProfileFormPanel(onSaved, existing, hasStoredSecret, sharedWith);
   }
 
   private readonly panel: vscode.WebviewPanel;
   private readonly mode: 'add' | 'edit';
   private readonly originalName?: string;
-  private readonly originalAuthType?: ProfileConfig['auth']['type'];
+  private readonly originalAuthType?: CredentialType;
 
   private constructor(
     private readonly onSaved: () => void,
-    existing?: ProfileConfig,
+    existing?: ResolvedProfile,
     hasStoredSecret = false,
+    sharedWith: string[] = [],
   ) {
     this.mode = existing ? 'edit' : 'add';
     this.originalName = existing?.name;
-    this.originalAuthType = existing?.auth.type;
+    this.originalAuthType = existing?.resolvedCredential.type;
     this.panel = vscode.window.createWebviewPanel(
       'navapiProfileForm',
       existing ? `Edit Profile: ${existing.name}` : 'Add Profile',
@@ -80,10 +85,18 @@ export class ProfileFormPanel {
       values: {
         name: existing?.name ?? '',
         tenantId: existing?.tenantId ?? '',
-        authType: existing?.auth.type === 'azureCli' ? 'azureCli' : 'clientSecret',
-        clientId: existing?.auth.type === 'clientSecret' ? existing.auth.clientId : '',
+        credential: existing?.credential ?? '',
+        sharedWith,
+        authType: existing?.resolvedCredential.type === 'azureCli' ? 'azureCli' : 'clientSecret',
+        clientId:
+          existing?.resolvedCredential.type === 'clientSecret'
+            ? existing.resolvedCredential.clientId
+            : '',
         clientSecret: '',
-        azAccount: existing?.auth.type === 'azureCli' ? (existing.auth.account ?? '') : '',
+        azAccount:
+          existing?.resolvedCredential.type === 'azureCli'
+            ? (existing.resolvedCredential.account ?? '')
+            : '',
         environment: existing?.environment ?? '',
         company: existing?.company ?? '',
         baseUrl: existing?.baseUrl ?? '',
@@ -199,18 +212,25 @@ export class ProfileFormPanel {
       const secret = await this.resolveSecret(values);
       if (!secret && !isAzureCli(values)) throw new Error('A client secret is required.');
       const name = this.mode === 'edit' && this.originalName ? this.originalName : values.name;
-      await store.upsert({
-        name,
-        tenantId: values.tenantId,
-        auth: isAzureCli(values)
-          ? { type: 'azureCli', account: values.azAccount || undefined }
-          : { type: 'clientSecret', clientId: values.clientId },
-        environment: values.environment,
-        company: values.company || undefined,
-        baseUrl: values.baseUrl || undefined,
-        readOnly: values.readOnly ? true : undefined,
-      });
-      if (secret) await (await resolveSecretStore(dir)).store.set(name, secret);
+      // A profile that already points at a credential keeps pointing at it,
+      // so editing one profile of a shared credential updates the identity
+      // once rather than forking a copy per profile. A new profile mints a
+      // credential named after itself, matching the CLI and the migration.
+      const credentialName = values.credential || name;
+      await store.upsertWithCredential(
+        {
+          name,
+          tenantId: values.tenantId,
+          environment: values.environment,
+          company: values.company || undefined,
+          baseUrl: values.baseUrl || undefined,
+          readOnly: values.readOnly ? true : undefined,
+        },
+        isAzureCli(values)
+          ? { name: credentialName, type: 'azureCli', account: values.azAccount || undefined }
+          : { name: credentialName, type: 'clientSecret', clientId: values.clientId },
+      );
+      if (secret) await (await resolveSecretStore(dir)).store.set(credentialName, secret);
       // A successful test already fetched companies; cache them for the tree.
       try {
         await saveCompanies(name, await testConnection(values, secret));

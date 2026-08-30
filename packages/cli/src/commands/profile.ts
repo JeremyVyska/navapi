@@ -110,7 +110,7 @@ export function resolveIdentityChoice(
   return { prompt: canPrompt };
 }
 
-async function pickAzAccount(): Promise<string | undefined> {
+export async function pickAzAccount(): Promise<string | undefined> {
   let identities: AzIdentity[];
   try {
     identities = await azIdentities();
@@ -147,6 +147,10 @@ export function registerProfile(program: Command): void {
     .description('Add or update a profile pinned to a BC environment')
     .requiredOption('--tenant <tenantId>', 'Entra ID tenant ID or domain')
     .requiredOption('--environment <environment>', 'BC environment name (e.g. Production)')
+    .option(
+      '--credential <name>',
+      'Use an existing saved credential instead of creating one for this profile',
+    )
     .option('--auth <type>', 'Auth strategy: clientSecret (default) or azureCli')
     .option('--client-id <clientId>', 'App registration client ID (client-credentials auth)')
     .option(
@@ -163,6 +167,39 @@ export function registerProfile(program: Command): void {
     )
     .option('--default', 'Make this the default profile')
     .action(async (name: string, opts) => {
+      // Pointing at a saved credential is the whole reason credentials exist:
+      // one identity, many environments, one secret.
+      if (opts.credential) {
+        const stray = ['clientId', 'secret', 'azAccount', 'auth'].filter((k) => opts[k]);
+        if (stray.length) {
+          throw new NavApiError(
+            `--credential names an existing credential, so ${stray
+              .map((k) => `--${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`)
+              .join(' and ')} would be ignored. ` +
+              `Change the credential itself with: navapi credential add ${opts.credential} ...`,
+          );
+        }
+        const credential = await profileStore().getCredential(opts.credential);
+        await profileStore().upsert(
+          {
+            name,
+            credential: credential.name,
+            tenantId: opts.tenant,
+            environment: opts.environment,
+            company: opts.company,
+            baseUrl: opts.baseUrl,
+            readOnly: opts.readOnly ? true : undefined,
+          },
+          { makeDefault: Boolean(opts.default) },
+        );
+        console.log(
+          `${pc.green('✔')} Profile ${pc.bold(name)} saved ` +
+            pc.dim(`(${opts.environment} @ ${opts.tenant}, credential: ${credential.name})`),
+        );
+        console.log(pc.dim(`Next: navapi discover -p ${name}`));
+        return;
+      }
+
       const authType = opts.auth ? parseAuthType(opts.auth) : 'clientSecret';
       const azureCli = authType === 'azureCli';
 
@@ -202,21 +239,24 @@ export function registerProfile(program: Command): void {
       // Whether this replaces a secret-backed profile decides if there is a
       // now-unused secret to clear out below.
       const replaced = await profileStore()
-        .get(name)
+        .resolve(name)
         .catch(() => undefined);
 
-      await profileStore().upsert(
+      // The minted credential takes the profile's name. That keeps a secret
+      // already stored under this name resolving, and matches how migrated
+      // profiles are named, so the two paths agree.
+      await profileStore().upsertWithCredential(
         {
           name,
           tenantId: opts.tenant,
-          auth: azureCli
-            ? { type: 'azureCli', account: azAccount || undefined }
-            : { type: 'clientSecret', clientId: opts.clientId },
           environment: opts.environment,
           company: opts.company,
           baseUrl: opts.baseUrl,
           readOnly: opts.readOnly ? true : undefined,
         },
+        azureCli
+          ? { name, type: 'azureCli', account: azAccount || undefined }
+          : { name, type: 'clientSecret', clientId: opts.clientId },
         { makeDefault: Boolean(opts.default) },
       );
 
@@ -235,7 +275,7 @@ export function registerProfile(program: Command): void {
         // Say so rather than reporting "no secret stored" while one sits in
         // the keychain — but don't delete it: an Entra client secret is shown
         // once at creation, so a mistaken switch would be unrecoverable.
-        if (replaced?.auth.type === 'clientSecret') {
+        if (replaced?.resolvedCredential.type === 'clientSecret') {
           const { store } = await secretStore();
           if ((await store.get(name)) !== undefined) {
             how += `; the previous client secret is kept — remove it with: navapi secrets forget ${name}`;
@@ -254,9 +294,9 @@ export function registerProfile(program: Command): void {
     .description('List profiles')
     .option('--json', 'JSON output')
     .action(async (opts) => {
-      const { profiles, defaultProfile } = await profileStore().listAll();
+      const { profiles, credentials, defaultProfile } = await profileStore().listAll();
       if (wantJson(opts.json)) {
-        emitJson({ profiles, defaultProfile });
+        emitJson({ profiles, credentials, defaultProfile });
         return;
       }
       printTable(
@@ -266,9 +306,10 @@ export function registerProfile(program: Command): void {
           environment: p.environment,
           tenant: p.tenantId,
           company: p.company ?? '',
+          credential: p.credential,
           access: p.readOnly ? pc.yellow('read-only') : '',
         })),
-        ['', 'name', 'environment', 'tenant', 'company', 'access'],
+        ['', 'name', 'environment', 'tenant', 'company', 'credential', 'access'],
       );
     });
 
@@ -278,7 +319,7 @@ export function registerProfile(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (name: string | undefined, opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const client = await createClient(name ?? globals.profile);
+      const client = await createClient({ ...globals, profile: name ?? globals.profile });
       try {
         const companies = await client.listCompanies();
         if (wantJson(opts.json)) {

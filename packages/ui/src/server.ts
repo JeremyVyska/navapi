@@ -10,6 +10,7 @@ import {
   buildFilterExpression,
   buildGrid,
   ClientCredentialsAuth,
+  type Credential,
   companyLabel,
   createClientForProfile,
   defaultConfigDir,
@@ -173,7 +174,7 @@ function optionalString(value: unknown): string | undefined {
 }
 
 type ClientSecretProfile = ProfileConfig & {
-  auth: { type: 'clientSecret'; clientId: string };
+  clientId: string;
   clientSecret?: string;
 };
 
@@ -194,13 +195,15 @@ function profileFrom(value: unknown): ClientSecretProfile {
       throw new ApiError(400, 'API base URL must use HTTP or HTTPS.');
     }
   }
+  const name = requiredString(input.name, 'Profile name');
   return {
-    name: requiredString(input.name, 'Profile name'),
+    name,
     tenantId: requiredString(input.tenantId, 'Tenant'),
-    auth: {
-      type: 'clientSecret',
-      clientId: requiredString(input.clientId, 'Client ID'),
-    },
+    // The form mints a credential named after the profile, matching what the
+    // CLI and the v0/v1 migration do, so all three agree on where the secret
+    // is keyed. Sharing one credential across profiles is a CLI/VS Code job.
+    credential: name,
+    clientId: requiredString(input.clientId, 'Client ID'),
     environment: requiredString(input.environment, 'Environment'),
     company: optionalString(input.company),
     baseUrl,
@@ -208,18 +211,33 @@ function profileFrom(value: unknown): ClientSecretProfile {
   };
 }
 
-/** The web UI form only edits client-secret profiles; az CLI ones stay untouched. */
-function clientIdOf(profile: ProfileConfig): string | undefined {
-  return profile.auth?.type === 'clientSecret' ? profile.auth.clientId : undefined;
+/** The web UI form only edits client-secret credentials; az CLI ones stay untouched. */
+function clientIdOf(credential: Credential | undefined): string | undefined {
+  return credential?.type === 'clientSecret' ? credential.clientId : undefined;
 }
 
 async function assertEditableProfile(store: ProfileStore, name: string): Promise<void> {
-  const existing = (await store.listAll()).profiles.find((item) => item.name === name);
-  if (existing && existing.auth?.type === 'azureCli') {
+  const { profiles, credentials } = await store.listAll();
+  const existing = profiles.find((item) => item.name === name);
+  if (!existing) return;
+  const credential = credentials.find((c) => c.name === existing.credential);
+  if (credential?.type === 'azureCli') {
     throw new ApiError(
       400,
       `Profile "${name}" signs in with the Azure CLI. Edit it with \`navapi profile\` or the ` +
         'VS Code extension — the web UI only manages client-secret profiles.',
+    );
+  }
+  // A credential shared by several profiles cannot be edited from a form that
+  // only knows about one of them.
+  const shared = profiles.filter((p) => p.credential === existing.credential);
+  if (shared.length > 1) {
+    throw new ApiError(
+      400,
+      `Profile "${name}" shares credential "${existing.credential}" with ${shared
+        .filter((p) => p.name !== name)
+        .map((p) => `"${p.name}"`)
+        .join(', ')}. Editing it here would change them all — use \`navapi credential\` instead.`,
     );
   }
 }
@@ -396,13 +414,17 @@ export async function startUiServer(options: UiServerOptions = {}): Promise<UiSe
       return;
     }
     if (method === 'GET' && pathname === '/api/state') {
-      const { profiles, defaultProfile } = await profileStore.listAll();
+      const { profiles, credentials, defaultProfile } = await profileStore.listAll();
       const withSecret = await Promise.all(
-        profiles.map(async (profile) => ({
-          ...profile,
-          clientId: clientIdOf(profile),
-          hasSecret: Boolean(await secret.store.get(profile.name)),
-        })),
+        profiles.map(async (profile) => {
+          const credential = credentials.find((c) => c.name === profile.credential);
+          return {
+            ...profile,
+            clientId: clientIdOf(credential),
+            authType: credential?.type ?? 'clientSecret',
+            hasSecret: Boolean(await secret.store.get(profile.credential)),
+          };
+        }),
       );
       sendJson(response, 200, {
         profiles: withSecret,
@@ -420,13 +442,13 @@ export async function startUiServer(options: UiServerOptions = {}): Promise<UiSe
       const clientSecret =
         profile.clientSecret ??
         (originalName ? await secret.store.get(originalName) : undefined) ??
-        (await secret.store.get(profile.name));
+        (await secret.store.get(profile.credential));
       if (!clientSecret) throw new ApiError(400, 'A client secret is required.');
       const testClient = new BcClient({
         profile,
         auth: new ClientCredentialsAuth({
           tenantId: profile.tenantId,
-          clientId: profile.auth.clientId,
+          clientId: profile.clientId,
           clientSecret,
           authorityBase: process.env.NAVAPI_AUTHORITY,
           fetch: fetchImpl,
@@ -455,23 +477,30 @@ export async function startUiServer(options: UiServerOptions = {}): Promise<UiSe
       const exists = profiles.some((item) => item.name === profile.name);
       if (!originalName && exists)
         throw new ApiError(409, `Profile "${profile.name}" already exists.`);
-      const currentSecret = exists ? await secret.store.get(profile.name) : undefined;
+      const stored = profiles.find((item) => item.name === profile.name);
+      // Keep editing the credential this profile already uses. Minting one
+      // named after the profile instead would orphan the old credential and
+      // strand its secret under the old key.
+      const credentialName = stored?.credential ?? profile.credential;
+      const currentSecret = exists ? await secret.store.get(credentialName) : undefined;
       if (!profile.clientSecret && !currentSecret) {
         throw new ApiError(400, 'A client secret is required.');
       }
       // The web form has no read-only control, so carry the stored flag
       // through rather than clearing a guardrail the user set elsewhere.
-      const storedReadOnly = profiles.find((item) => item.name === profile.name)?.readOnly;
-      await profileStore.upsert({
-        name: profile.name,
-        tenantId: profile.tenantId,
-        auth: profile.auth,
-        environment: profile.environment,
-        company: profile.company,
-        baseUrl: profile.baseUrl,
-        readOnly: storedReadOnly,
-      });
-      if (profile.clientSecret) await secret.store.set(profile.name, profile.clientSecret);
+      const storedReadOnly = stored?.readOnly;
+      await profileStore.upsertWithCredential(
+        {
+          name: profile.name,
+          tenantId: profile.tenantId,
+          environment: profile.environment,
+          company: profile.company,
+          baseUrl: profile.baseUrl,
+          readOnly: storedReadOnly,
+        },
+        { name: credentialName, type: 'clientSecret', clientId: profile.clientId },
+      );
+      if (profile.clientSecret) await secret.store.set(credentialName, profile.clientSecret);
       preferredProfile = profile.name;
       sendJson(response, 200, { ok: true, name: profile.name, secretBackend: secret.backend });
       return;

@@ -18,7 +18,7 @@ export function registerAction(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (entitySet: string, id: string, actionName: string, opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const client = await createClient(globals.profile);
+      const client = await createClient(globals);
       const parameters = opts.body ? await readJsonSource(opts.body) : undefined;
       const result = await client.callAction(entitySet, id, actionName, {
         route: opts.route,
@@ -45,7 +45,7 @@ export function registerAction(program: Command): void {
     .option('--json', 'JSON output')
     .action(async (opts, cmd) => {
       const globals = cmd.optsWithGlobals();
-      const client = await createClient(globals.profile);
+      const client = await createClient(globals);
       const parsed = await readJsonSource(opts.body);
       const requests = Array.isArray(parsed)
         ? parsed

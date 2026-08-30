@@ -15,6 +15,15 @@ navapi profile az-accounts         # which identities az is signed in as (--az-a
 # NOT a security boundary — use a read-only BC permission set for that)
 navapi profile add contoso-prod --tenant $TENANT_ID --client-id $CLIENT_ID --environment Production --read-only
 
+# One identity, many environments: save the credential once, point it wherever
+navapi credential add contoso-app --client-id $CLIENT_ID --secret $SECRET
+navapi profile add contoso-uat --credential contoso-app --tenant $TENANT_ID --environment Sandbox-UAT
+navapi credential list             # identities, and the profiles each backs
+
+# ...or skip profiles entirely — these layer over whichever profile is active
+navapi get customers --tenant $OTHER_TENANT
+navapi discover --credential contoso-app --tenant $T --environment Production
+
 navapi company list                # companies in the environment (● = current default)
 navapi company use                 # switch the default company (interactive picker on a TTY)
 navapi routes                      # every API route the environment exposes

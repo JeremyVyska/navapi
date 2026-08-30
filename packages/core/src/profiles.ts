@@ -3,9 +3,10 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { defaultConfigDir } from './cache.js';
 import { NavApiError } from './errors.js';
-import type { ProfileAuth, ProfileConfig, StoredProfile } from './types.js';
+import type { Credential, ProfileConfig, ResolvedProfile, StoredProfile } from './types.js';
 
-interface ProfilesFile {
+interface ConfigFile {
+  credentials: Record<string, Credential>;
   profiles: Record<string, ProfileConfig>;
   defaultProfile?: string;
 }
@@ -24,53 +25,86 @@ async function writeFileAtomic(file: string, data: string, mode?: number): Promi
   await rename(tmp, file);
 }
 
-/** The file as it may actually be on disk, including pre-`auth` profiles. */
-interface StoredProfilesFile {
+/** The file as it may actually be on disk — see {@link StoredProfile}. */
+interface StoredConfigFile {
+  version?: number;
+  credentials?: Record<string, Credential>;
   profiles: Record<string, StoredProfile>;
   defaultProfile?: string;
 }
 
+export const CONFIG_VERSION = 2;
+
 /**
- * Reads a profile written by any version. Before `auth` existed a profile
- * carried `clientId` at the top level and meant client-credentials; that is
- * the only other shape ever released, so it is the only one migrated.
+ * Rebuilds credentials and profiles from any shape navapi has written.
  *
- * Migration happens in memory on read, and `serializeProfile` writes the
- * legacy field back out alongside the new one — so no navapi version is ever
- * left with a profile it can't read. That matters because any write rewrites
- * the whole file, not just the profile being changed.
+ * Older files embed the credential in each profile, so migration mints one
+ * credential per profile, named after it. That is deliberately 1:1 rather than
+ * deduplicating by client ID: two profiles sharing an app registration may
+ * still have different secrets stored under their own names, and merging them
+ * would silently authenticate one profile with the other's secret.
+ * Consolidating is the user's decision, and `navapi credential` makes it
+ * explicit.
+ *
+ * Naming each credential after its profile has a second benefit: secrets are
+ * keyed by credential name from now on and were keyed by profile name before,
+ * so a migrated setup needs no keychain writes at all.
  */
-function normalizeProfile(stored: StoredProfile): ProfileConfig {
-  const { clientId, auth, ...rest } = stored;
-  return { ...rest, auth: auth ?? inferAuth(clientId) };
+/**
+ * The credential embedded in a pre-v2 profile, named after that profile.
+ * Shared by file migration and {@link ProfileStore.upsert}, so a legacy shape
+ * means the same thing however it arrives.
+ */
+function credentialFromLegacy(name: string, stored: StoredProfile): Credential {
+  if (stored.auth?.type === 'azureCli') {
+    return { name, type: 'azureCli', account: stored.auth.account };
+  }
+  // No client ID anywhere is a profile we cannot authenticate. Rather than
+  // guess, record an empty one so the factory can raise the error that names
+  // the profile and the fix.
+  return {
+    name,
+    type: 'clientSecret',
+    clientId: stored.auth?.clientId ?? stored.clientId ?? '',
+  };
 }
 
-function inferAuth(clientId?: string): ProfileAuth {
-  // No clientId and no auth is a profile we can't authenticate. Rather than
-  // guess, record it as client-credentials with an empty client ID so the
-  // factory can raise the error that names the profile and the fix.
-  return { type: 'clientSecret', clientId: clientId ?? '' };
+function migrate(parsed: StoredConfigFile): ConfigFile {
+  const credentials: Record<string, Credential> = { ...(parsed.credentials ?? {}) };
+  const profiles: Record<string, ProfileConfig> = {};
+
+  for (const [name, stored] of Object.entries(parsed.profiles ?? {})) {
+    const { auth, clientId, credential, ...rest } = stored;
+    if (credential) {
+      profiles[name] = { ...rest, name, credential };
+      continue;
+    }
+    // v1 (`auth`) or v0 (top-level `clientId`); v0 always meant client-credentials.
+    credentials[name] ??= credentialFromLegacy(name, { auth, clientId, ...rest, name });
+    profiles[name] = { ...rest, name, credential: name };
+  }
+
+  return { credentials, profiles, defaultProfile: parsed.defaultProfile };
 }
 
 /**
- * Writes the `auth` union and, for client-secret profiles, the pre-`auth`
- * top-level `clientId` as well. Saving any profile rewrites every profile in
- * the file, so without the legacy field a single `profile add` would move
- * untouched profiles to a shape an older navapi reads as `clientId:
- * undefined` — which fails against Entra with an opaque `invalid_client`.
+ * Writes v2, and for client-secret profiles the pre-`auth` top-level
+ * `clientId` as well. Saving anything rewrites the whole file, so without the
+ * legacy field a single `profile add` would move untouched profiles to a shape
+ * the published 0.2.0 reads as `clientId: undefined` — which fails against
+ * Entra with an opaque `invalid_client`. A migrated credential shares its
+ * profile's name, so 0.2.0 still finds the secret too.
  */
-function serializeProfile(profile: ProfileConfig): StoredProfile {
-  // Normalize on the way in as well: `upsert` is public and callers outside
-  // this package still build the pre-`auth` literal with a top-level clientId
-  // (the MCP server's own tests do). Reading `profile.auth.type` directly
-  // threw on those, so one write path now handles both shapes, the same way
-  // `load()` handles both on read.
-  const normalized = normalizeProfile(profile as StoredProfile);
-  if (normalized.auth.type !== 'clientSecret') return normalized;
-  return { ...normalized, clientId: normalized.auth.clientId };
+function serializeProfile(profile: ProfileConfig, credential?: Credential): StoredProfile {
+  if (credential?.type !== 'clientSecret') return profile;
+  return { ...profile, clientId: credential.clientId };
 }
 
-/** Named profiles stored in `<configDir>/profiles.json` (no secrets in here). */
+/**
+ * Named credentials and profiles in `<configDir>/profiles.json` (no secrets in
+ * here). Both live in one file so a single atomic write keeps a profile and the
+ * credential it references consistent.
+ */
 export class ProfileStore {
   private readonly file: string;
   private readonly dir: string;
@@ -80,24 +114,24 @@ export class ProfileStore {
     this.file = path.join(this.dir, 'profiles.json');
   }
 
-  async load(): Promise<ProfilesFile> {
+  async load(): Promise<ConfigFile> {
     try {
       const raw = await readFile(this.file, 'utf8');
-      const parsed = JSON.parse(raw) as StoredProfilesFile;
-      const profiles: Record<string, ProfileConfig> = {};
-      for (const [name, stored] of Object.entries(parsed.profiles ?? {})) {
-        profiles[name] = normalizeProfile(stored);
-      }
-      return { profiles, defaultProfile: parsed.defaultProfile };
+      return migrate(JSON.parse(raw) as StoredConfigFile);
     } catch {
-      return { profiles: {} };
+      return { credentials: {}, profiles: {} };
     }
   }
 
-  private async save(data: ProfilesFile): Promise<void> {
-    const stored: StoredProfilesFile = {
+  private async save(data: ConfigFile): Promise<void> {
+    const stored: StoredConfigFile = {
+      version: CONFIG_VERSION,
+      credentials: data.credentials,
       profiles: Object.fromEntries(
-        Object.entries(data.profiles).map(([name, p]) => [name, serializeProfile(p)]),
+        Object.entries(data.profiles).map(([name, p]) => [
+          name,
+          serializeProfile(p, data.credentials[p.credential]),
+        ]),
       ),
       defaultProfile: data.defaultProfile,
     };
@@ -105,9 +139,81 @@ export class ProfileStore {
     await writeFileAtomic(this.file, JSON.stringify(stored, null, 2));
   }
 
-  async upsert(profile: ProfileConfig, opts: { makeDefault?: boolean } = {}): Promise<void> {
+  // ------------------------------------------------------------ credentials
+
+  async listCredentials(): Promise<Credential[]> {
+    const { credentials } = await this.load();
+    return Object.values(credentials).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async getCredential(name: string): Promise<Credential> {
+    const { credentials } = await this.load();
+    const credential = credentials[name];
+    if (!credential) {
+      const known = Object.keys(credentials);
+      throw new NavApiError(
+        `Credential "${name}" not found.${known.length ? ` Known credentials: ${known.join(', ')}` : ''}`,
+      );
+    }
+    return credential;
+  }
+
+  async upsertCredential(credential: Credential): Promise<void> {
     const data = await this.load();
+    data.credentials[credential.name] = credential;
+    await this.save(data);
+  }
+
+  /** Refuses while a profile still points at it, naming the profiles. */
+  async removeCredential(name: string): Promise<void> {
+    const data = await this.load();
+    if (!data.credentials[name]) throw new NavApiError(`Credential "${name}" does not exist`);
+    const used = Object.values(data.profiles).filter((p) => p.credential === name);
+    if (used.length) {
+      throw new NavApiError(
+        `Credential "${name}" is still used by ${used.map((p) => `"${p.name}"`).join(', ')}. ` +
+          'Repoint or remove those profiles first.',
+      );
+    }
+    delete data.credentials[name];
+    await this.save(data);
+  }
+
+  // --------------------------------------------------------------- profiles
+
+  /**
+   * `upsert` is public, and callers outside this package still build the
+   * pre-credential literal with an embedded `clientId` or `auth` (the MCP
+   * server's own tests do). Such a profile mints a credential named after
+   * itself, exactly as reading an older file does — one meaning for the legacy
+   * shape however it arrives.
+   */
+  async upsert(profile: ProfileConfig, opts: { makeDefault?: boolean } = {}): Promise<void> {
+    const legacy = profile as ProfileConfig & StoredProfile;
+    if (!profile.credential && (legacy.clientId || legacy.auth)) {
+      const { clientId, auth, ...rest } = legacy;
+      return this.upsertWithCredential(rest, credentialFromLegacy(profile.name, legacy), opts);
+    }
+    const data = await this.load();
+    if (!data.credentials[profile.credential]) {
+      throw new NavApiError(
+        `Profile "${profile.name}" references credential "${profile.credential}", which does not exist.`,
+      );
+    }
     data.profiles[profile.name] = profile;
+    if (opts.makeDefault || !data.defaultProfile) data.defaultProfile = profile.name;
+    await this.save(data);
+  }
+
+  /** Saves a credential and a profile that uses it in one atomic write. */
+  async upsertWithCredential(
+    profile: Omit<ProfileConfig, 'credential'>,
+    credential: Credential,
+    opts: { makeDefault?: boolean } = {},
+  ): Promise<void> {
+    const data = await this.load();
+    data.credentials[credential.name] = credential;
+    data.profiles[profile.name] = { ...profile, credential: credential.name };
     if (opts.makeDefault || !data.defaultProfile) data.defaultProfile = profile.name;
     await this.save(data);
   }
@@ -146,10 +252,29 @@ export class ProfileStore {
     return profile;
   }
 
-  async listAll(): Promise<{ profiles: ProfileConfig[]; defaultProfile?: string }> {
+  /** A profile with its credential attached, which is what building a client needs. */
+  async resolve(name?: string): Promise<ResolvedProfile> {
+    const data = await this.load();
+    const profile = await this.get(name);
+    const resolvedCredential = data.credentials[profile.credential];
+    if (!resolvedCredential) {
+      throw new NavApiError(
+        `Profile "${profile.name}" references credential "${profile.credential}", which does not exist. ` +
+          `Create it with: navapi credential add ${profile.credential} ...`,
+      );
+    }
+    return { ...profile, resolvedCredential };
+  }
+
+  async listAll(): Promise<{
+    profiles: ProfileConfig[];
+    credentials: Credential[];
+    defaultProfile?: string;
+  }> {
     const data = await this.load();
     return {
       profiles: Object.values(data.profiles).sort((a, b) => a.name.localeCompare(b.name)),
+      credentials: Object.values(data.credentials).sort((a, b) => a.name.localeCompare(b.name)),
       defaultProfile: data.defaultProfile,
     };
   }

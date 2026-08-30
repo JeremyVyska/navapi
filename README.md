@@ -121,6 +121,52 @@ az login --tenant $CUSTOMER_TENANT --allow-no-subscriptions --scope https://api.
 
 So it is the right choice for exploring an environment as yourself, and the wrong one for an unattended integration — use client credentials there.
 
+### Credentials and targets are separate
+
+A **credential** is an identity — an app registration, or your Azure CLI login.
+A **profile** points one at a tenant + environment. Several profiles can share
+one credential, which is the point: one app registration reaching a dozen
+customer environments needs one secret, not a dozen copies of it.
+
+```bash
+# the identity, once
+navapi credential add contoso-app --client-id $CLIENT_ID --secret $SECRET
+
+# wherever you point it
+navapi profile add contoso-prod --credential contoso-app --tenant $TENANT --environment Production
+navapi profile add contoso-uat  --credential contoso-app --tenant $TENANT --environment Sandbox-UAT
+
+navapi credential list          # identities, and the profiles each one backs
+```
+
+`navapi profile add` still creates a credential for you when you pass
+`--client-id` or `--auth azureCli` directly, so the one-profile case is
+unchanged.
+
+**A profile isn't required.** Any command that reaches Business Central takes
+`--credential`, `--tenant`, and `--environment`, and each one layers *over* your
+profile rather than replacing it. So reaching one more tenant with the same app
+registration means naming the tenant and nothing else:
+
+```bash
+navapi get customers --tenant $OTHER_TENANT     # same credential, same environment, different tenant
+navapi discover --credential contoso-app --tenant $T --environment Production   # no profile at all
+```
+
+`NAVAPI_CREDENTIAL`, `NAVAPI_TENANT`, and `NAVAPI_ENVIRONMENT` set the same
+three from the environment, the way `NAVAPI_PROFILE` always has. The MCP tools
+take them as arguments, so an agent can reach an environment nobody saved a
+profile for.
+
+**Upgrading is automatic.** Profiles written by earlier versions are read as
+they always were: each one gets a credential named after it, minted in memory
+on read, and the file is only rewritten when you change something. Secrets stay
+exactly where they are — a credential named after its profile resolves the
+secret already stored under that name, so there is no keychain migration to
+run. Profiles are deliberately *not* merged onto a shared credential just
+because they use the same client ID; consolidating is `navapi credential`'s job
+when you decide to.
+
 ### Read-only profiles
 
 Mark a profile read-only and every write through it is refused — create, update,
@@ -227,6 +273,7 @@ Roadmap:
 - [x] `@navapi/core`: OAuth client credentials, HTTP client, ETag handling
 - [x] `@navapi/core`: `$metadata` discovery + on-disk cache (routes enumerated via the runtime API's `apiRoutes`, with `/api/routes` and `v2.0` fallbacks)
 - [x] Read-only discovery and browsing for published `/ODataV4` page/query web services
+- [x] Credentials separated from tenant/environment context: one identity backs many profiles, `--credential`/`--tenant`/`--environment` override per call, and older profiles migrate on read with no keychain changes
 - [x] Read-only profiles: `--read-only` refuses every write (including writes inside a `$batch`) across all faces — a guardrail against accidental or agent-hallucinated writes, not a security boundary
 - [x] `navapi` CLI: `profile`, `get`, `post`, `patch`, `delete`, `discover` (+ `routes`, `ls`, `companies`)
 - [x] `@navapi/core`: `$batch` support (JSON batch, `{company}` substitution, atomicity groups)
