@@ -73,6 +73,18 @@ function fakeFetch(): typeof globalThis.fetch {
         return json(200, { '@odata.etag': 'W/"e2"', id: CUST_ID, displayName: 'Adatum Renamed' });
       }
     }
+    if (url.includes("customers(number='10000')")) {
+      if (method === 'GET') {
+        return json(200, { '@odata.etag': 'W/"e1"', number: '10000', displayName: 'Adatum' });
+      }
+      if (method === 'PATCH') {
+        return json(200, {
+          '@odata.etag': 'W/"e2"',
+          number: '10000',
+          displayName: 'Adatum Renamed',
+        });
+      }
+    }
     if (url.includes('skiptoken=p2')) {
       return json(200, { value: [{ id: 'cust-2', displayName: 'Trey' }] });
     }
@@ -298,6 +310,59 @@ describe('navapi MCP server', () => {
     expect(data.displayName).toBe('Adatum Renamed');
     const patch = recorded.find((r) => r.method === 'PATCH');
     expect(patch?.headers['if-match']).toBe('W/"e1"');
+  });
+
+  it('update_record accepts named OData keys', async () => {
+    const client = await connectedClient();
+    const data = parseText(
+      await client.callTool({
+        name: 'update_record',
+        arguments: {
+          entitySet: 'customers',
+          id: { number: '10000' },
+          patch: { displayName: 'Adatum Renamed' },
+        },
+      }),
+    );
+    expect(data.displayName).toBe('Adatum Renamed');
+    const patch = recorded.find(
+      (request) => request.method === 'PATCH' && request.url.includes("number='10000'"),
+    );
+    expect(patch?.headers['if-match']).toBe('W/"e1"');
+  });
+
+  it('rejects empty record key objects during tool validation', async () => {
+    const client = await connectedClient();
+    const result = await client.callTool({
+      name: 'update_record',
+      arguments: {
+        entitySet: 'customers',
+        id: {},
+        patch: { displayName: 'Adatum Renamed' },
+      },
+    });
+
+    expect(result.isError).toBe(true);
+    expect((result.content as { text: string }[])[0].text).toContain(
+      'Record key objects cannot be empty',
+    );
+  });
+
+  it('rejects blank record key field names during tool validation', async () => {
+    const client = await connectedClient();
+    const result = await client.callTool({
+      name: 'update_record',
+      arguments: {
+        entitySet: 'customers',
+        id: { ' ': '10000' },
+        patch: { displayName: 'Adatum Renamed' },
+      },
+    });
+
+    expect(result.isError).toBe(true);
+    expect((result.content as { text: string }[])[0].text).toContain(
+      'Record key field names cannot be empty',
+    );
   });
 
   it('invoke_batch passes requests through', async () => {

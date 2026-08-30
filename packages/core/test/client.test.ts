@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   BcClient,
   MetadataCache,
+  NotFoundError,
+  ODATA_V4_ROUTE,
   PreconditionFailedError,
   StaticTokenProvider,
 } from '../src/index.js';
@@ -14,6 +16,12 @@ import { type MockRoute, mockFetch } from './helpers.js';
 const COMPANY_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const CUSTOMER_ID = '01121212-a0b0-e011-8fb2-78e7d1625bd8';
 const API = 'https://api.businesscentral.dynamics.com/v2.0/tenant-1/Sandbox/api';
+const ODATA = 'https://api.businesscentral.dynamics.com/v2.0/tenant-1/Sandbox/ODataV4';
+const ODATA_UNAVAILABLE: MockRoute = {
+  match: (url) => url === `${ODATA}/`,
+  status: 404,
+  body: { error: { code: 'NotFound', message: 'ODataV4 unavailable' } },
+};
 
 const COMPANIES_ROUTE: MockRoute = {
   method: 'GET',
@@ -55,9 +63,108 @@ afterEach(async () => {
 });
 
 describe('BcClient routes & discovery', () => {
+  it('adds ODataV4 when published services are available', async () => {
+    const { client } = makeClient([
+      COMPANIES_ROUTE,
+      {
+        match: `${API}/microsoft/runtime/beta/companies(${COMPANY_ID})/apiRoutes`,
+        body: { value: [{ route: 'v2.0' }] },
+      },
+      {
+        match: (url) => url === `${ODATA}/`,
+        body: { value: [{ name: 'customers', kind: 'EntitySet', url: 'customers' }] },
+      },
+    ]);
+
+    expect((await client.listRoutes()).map((route) => route.path)).toEqual([
+      'v2.0',
+      ODATA_V4_ROUTE,
+    ]);
+  });
+
+  it('omits ODataV4 when no published services are visible', async () => {
+    const { client } = makeClient([
+      COMPANIES_ROUTE,
+      {
+        match: `${API}/microsoft/runtime/beta/companies(${COMPANY_ID})/apiRoutes`,
+        body: { value: [{ route: 'v2.0' }] },
+      },
+      { match: (url) => url === `${ODATA}/`, body: { value: [] } },
+    ]);
+
+    expect((await client.listRoutes()).map((route) => route.path)).toEqual(['v2.0']);
+  });
+
+  it.each([
+    401, 403, 404, 500,
+  ])('keeps API routes when the optional ODataV4 probe returns HTTP %i', async (status) => {
+    const { client } = makeClient([
+      COMPANIES_ROUTE,
+      {
+        match: `${API}/microsoft/runtime/beta/companies(${COMPANY_ID})/apiRoutes`,
+        body: { value: [{ route: 'v2.0' }] },
+      },
+      {
+        match: (url) => url === `${ODATA}/`,
+        status,
+        body: { error: { code: 'Unavailable', message: 'ODataV4 unavailable' } },
+      },
+    ]);
+
+    expect((await client.listRoutes()).map((route) => route.path)).toEqual(['v2.0']);
+  });
+
+  it('keeps API routes when the optional ODataV4 probe has a transport failure', async () => {
+    const { client } = makeClient([
+      COMPANIES_ROUTE,
+      {
+        match: `${API}/microsoft/runtime/beta/companies(${COMPANY_ID})/apiRoutes`,
+        body: { value: [{ route: 'v2.0' }] },
+      },
+    ]);
+
+    expect((await client.listRoutes()).map((route) => route.path)).toEqual(['v2.0']);
+  });
+
+  it('keeps API routes when the ODataV4 service document is invalid', async () => {
+    const { client } = makeClient([
+      COMPANIES_ROUTE,
+      {
+        match: `${API}/microsoft/runtime/beta/companies(${COMPANY_ID})/apiRoutes`,
+        body: { value: [{ route: 'v2.0' }] },
+      },
+      { match: (url) => url === `${ODATA}/`, body: '<html>not OData</html>' },
+    ]);
+
+    expect((await client.listRoutes()).map((route) => route.path)).toEqual(['v2.0']);
+  });
+
+  it('combines the ODataV4 service document with its shared metadata', async () => {
+    const { client } = makeClient([
+      {
+        match: (url) => url === `${ODATA}/`,
+        body: {
+          value: [
+            { name: 'customers', kind: 'EntitySet', url: 'customers' },
+            { name: 'salesOrders', kind: 'EntitySet', url: 'salesOrders' },
+          ],
+        },
+      },
+      { match: `${ODATA}/$metadata`, body: SAMPLE_EDMX },
+    ]);
+
+    const cached = await client.getMetadata('odatav4');
+    expect(cached.routePath).toBe(ODATA_V4_ROUTE);
+    expect(cached.metadata.entitySets.map((entitySet) => entitySet.name)).toEqual([
+      'customers',
+      'salesOrders',
+    ]);
+  });
+
   it('prefers the runtime apiRoutes endpoint (company-scoped)', async () => {
     const { client, calls } = makeClient([
       COMPANIES_ROUTE,
+      ODATA_UNAVAILABLE,
       {
         match: `${API}/microsoft/runtime/beta/companies(${COMPANY_ID})/apiRoutes`,
         body: { value: [{ route: 'v2.0' }, { route: 'contoso/fieldops/v1.0' }] },
@@ -71,6 +178,7 @@ describe('BcClient routes & discovery', () => {
   it('tries runtime v1.0 when beta is missing', async () => {
     const { client } = makeClient([
       COMPANIES_ROUTE,
+      ODATA_UNAVAILABLE,
       {
         match: '/microsoft/runtime/beta/',
         status: 404,
@@ -88,6 +196,7 @@ describe('BcClient routes & discovery', () => {
   it('falls back to /api/routes when the runtime API is unavailable', async () => {
     const { client } = makeClient([
       COMPANIES_ROUTE,
+      ODATA_UNAVAILABLE,
       {
         match: '/apiRoutes',
         status: 404,
@@ -105,6 +214,7 @@ describe('BcClient routes & discovery', () => {
   it('falls back to the standard route when every source is missing', async () => {
     const { client } = makeClient([
       COMPANIES_ROUTE,
+      ODATA_UNAVAILABLE,
       { match: '/apiRoutes', status: 404, body: { error: { code: 'NotFound', message: 'x' } } },
       { match: `${API}/routes`, status: 404, body: { error: { code: 'NotFound', message: 'x' } } },
     ]);
@@ -114,6 +224,7 @@ describe('BcClient routes & discovery', () => {
 
   it('discovers all routes, caches metadata, and reports per-route failures', async () => {
     const { client, calls } = makeClient([
+      ODATA_UNAVAILABLE,
       {
         match: `${API}/routes`,
         body: { value: [{ route: 'v2.0' }, { route: 'broken/route/v1.0' }] },
@@ -203,6 +314,81 @@ describe('BcClient companies', () => {
 });
 
 describe('BcClient list pagination', () => {
+  it('reads published ODataV4 services through Company(Id=guid)', async () => {
+    const { client, calls } = makeClient(
+      [{ match: '/ODataV4/Company(Id=', body: { value: [{ No: '10000' }] } }],
+      COMPANY_ID,
+    );
+
+    const result = await client.list('Customer', {
+      route: 'odatav4',
+      query: { select: ['No', 'Name'], filter: "Blocked eq ' '", top: 10 },
+      maxPageSize: 25,
+    });
+
+    expect(result.items).toEqual([{ No: '10000' }]);
+    expect(calls[0].url).toBe(
+      `${ODATA}/Company(Id=${COMPANY_ID})/Customer` +
+        `?$filter=Blocked%20eq%20'%20'&$select=No%2CName&$top=10`,
+    );
+    expect(calls[0].headers.prefer).toBe('odata.maxpagesize=25');
+  });
+
+  it('reads the ODataV4 Company entity set without nesting it under a company', async () => {
+    const { client, calls } = makeClient([
+      { match: (url) => url === `${ODATA}/Company?$top=1`, body: { value: [{ Name: 'CRONUS' }] } },
+    ]);
+
+    const result = await client.list('Company', {
+      route: ODATA_V4_ROUTE,
+      query: { top: 1 },
+    });
+
+    expect(result.items).toEqual([{ Name: 'CRONUS' }]);
+    expect(calls[0].url).toBe(`${ODATA}/Company?$top=1`);
+  });
+
+  it('includes the attempted URL when an ODataV4 read fails', async () => {
+    const { client } = makeClient(
+      [
+        {
+          match: '/ODataV4/Company(Id=',
+          status: 404,
+          body: { error: { code: 'NotFound', message: 'missing service' } },
+        },
+      ],
+      COMPANY_ID,
+    );
+
+    const error = await client
+      .list('MissingService', { route: ODATA_V4_ROUTE, query: { top: 1 } })
+      .catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(NotFoundError);
+    expect(error.message).toContain('missing service (HTTP 404)');
+    expect(error.message).toContain(`${ODATA}/Company(Id=${COMPANY_ID})/MissingService?$top=1`);
+  });
+
+  it('does not duplicate the URL in transport errors', async () => {
+    const { client } = makeClient([], COMPANY_ID);
+    const expectedUrl = `${API}/v2.0/companies(${COMPANY_ID})/customers`;
+
+    const error = await client.list('customers').catch((caught) => caught);
+
+    expect(error.message).toBe(`Request failed: GET ${expectedUrl}`);
+  });
+
+  it('rejects API-only operations for case-insensitive ODataV4 route names', async () => {
+    const { client } = makeClient([]);
+
+    await expect(
+      client.callAction('Customer', '10000', 'Post', { route: 'odatav4' }),
+    ).rejects.toThrow("Bound actions isn't supported for ODataV4");
+    await expect(client.batch([], { route: 'ODATAV4' })).rejects.toThrow(
+      "JSON batch isn't supported for ODataV4",
+    );
+  });
+
   it('returns first page plus nextLink by default', async () => {
     const next = `${API}/v2.0/companies(${COMPANY_ID})/customers?$skiptoken=abc`;
     const { client } = makeClient([
@@ -301,6 +487,76 @@ describe('BcClient list pagination', () => {
 });
 
 describe('BcClient ETag handling', () => {
+  it('creates records through published writable ODataV4 pages', async () => {
+    const { client, calls } = makeClient(
+      [
+        {
+          method: 'POST',
+          match: '/ODataV4/Company(Id=',
+          body: { No: '10000', Name: 'Adatum' },
+        },
+      ],
+      COMPANY_ID,
+    );
+
+    const result = await client.create(
+      'Customer',
+      { No: '10000', Name: 'Adatum' },
+      { route: ODATA_V4_ROUTE },
+    );
+
+    expect(result.Name).toBe('Adatum');
+    expect(calls[0].url).toBe(`${ODATA}/Company(Id=${COMPANY_ID})/Customer`);
+  });
+
+  it('updates ODataV4 records addressed by composite keys', async () => {
+    const key = { Document_Type: 'Order', Document_No: 'SO-1', Line_No: 10000 };
+    const keyExpression = "Document_Type='Order',Document_No='SO-1',Line_No=10000";
+    const { client, calls } = makeClient(
+      [
+        {
+          method: 'GET',
+          match: `SalesLine(${keyExpression})`,
+          body: { '@odata.etag': 'W/"line-1"', Quantity: 1 },
+        },
+        {
+          method: 'PATCH',
+          match: `SalesLine(${keyExpression})`,
+          body: { '@odata.etag': 'W/"line-2"', Quantity: 2 },
+        },
+      ],
+      COMPANY_ID,
+    );
+
+    const result = await client.update(
+      'SalesLine',
+      key,
+      { Quantity: 2 },
+      { route: ODATA_V4_ROUTE },
+    );
+
+    expect(result.Quantity).toBe(2);
+    expect(calls[1].headers['if-match']).toBe('W/"line-1"');
+  });
+
+  it('deletes ODataV4 records addressed by named string keys', async () => {
+    const { client, calls } = makeClient(
+      [
+        {
+          method: 'GET',
+          match: "Customer(No='10000')",
+          body: { '@odata.etag': 'W/"customer-1"', No: '10000' },
+        },
+        { method: 'DELETE', match: "Customer(No='10000')" },
+      ],
+      COMPANY_ID,
+    );
+
+    await client.deleteRecord('Customer', { No: '10000' }, { route: ODATA_V4_ROUTE });
+
+    expect(calls[1].headers['if-match']).toBe('W/"customer-1"');
+  });
+
   const recordUrl = `${API}/v2.0/companies(${COMPANY_ID})/customers(${CUSTOMER_ID})`;
 
   it('GETs the record for its ETag, then PATCHes with If-Match', async () => {

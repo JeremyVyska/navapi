@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSetArgs } from '../src/commands/crud.js';
+import { parseSetArgs, resolveRecordKey } from '../src/commands/crud.js';
 import { parseAuthType, resolveIdentityChoice, strayAuthFlags } from '../src/commands/profile.js';
 
 describe('parseSetArgs', () => {
@@ -86,5 +86,19 @@ describe('strayAuthFlags', () => {
     expect(strayAuthFlags('clientSecret', { clientId: 'c', secret: 's' })).toBeUndefined();
     expect(strayAuthFlags('azureCli', { azAccount: 'me@x.com' })).toBeUndefined();
     expect(strayAuthFlags('azureCli', {})).toBeUndefined();
+  });
+});
+
+describe('resolveRecordKey', () => {
+  it('rejects empty key objects as a user-facing error', async () => {
+    await expect(resolveRecordKey(undefined, '{}')).rejects.toThrow(
+      '--key must contain at least one OData key field.',
+    );
+  });
+
+  it('rejects blank key field names', async () => {
+    await expect(resolveRecordKey(undefined, '{" ":"value"}')).rejects.toThrow(
+      '--key field names cannot be empty.',
+    );
   });
 });

@@ -12,6 +12,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
   name, route, and entity type, then opens the records grid for the one you
   pick. The search runs against the on-disk cache; opening the grid fetches
   the first page, the same as clicking the entity set in the tree.
+- **ODataV4 published web services.** Read-only discovery and browsing for
+  published page and query web services. They appear under **ODataV4** in the
+  Endpoint Browser and use the existing filtering, selection, sorting, counts,
+  and paging experience. Core, CLI, and MCP also gain ODataV4 create, update,
+  and delete support, including named composite keys; the VS Code records
+  browser stays read-only.
+
+### Fixed
+
+- Opening the tenant-scoped ODataV4 `Company` entity set.
+- OData read errors now include the attempted request URL for easier diagnosis.
 
 ## 0.2.1
 

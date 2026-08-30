@@ -52,9 +52,9 @@ export type BcRecord = Record<string, unknown> & {
   id?: string;
 };
 
-/** One API route exposed by the environment (from GET /api/routes). */
+/** One discoverable endpoint group: an API route or published ODataV4 services. */
 export interface ApiRoute {
-  /** Route path relative to `<env>/api/`, e.g. `v2.0` or `contoso/fieldops/v1.0`. */
+  /** API route path, or `ODataV4` for published page/query web services. */
   path: string;
   publisher?: string;
   group?: string;
@@ -85,7 +85,7 @@ export interface EntitySetInfo {
   actions: string[];
 }
 
-/** Parsed $metadata for one API route. */
+/** Parsed $metadata for one API route or the ODataV4 service catalog. */
 export interface RouteMetadata {
   namespace: string;
   entitySets: EntitySetInfo[];

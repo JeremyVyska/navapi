@@ -4,7 +4,7 @@ import { MetadataCache } from './cache.js';
 import { NavApiError, NotFoundError, PreconditionFailedError } from './errors.js';
 import { BcHttp } from './http.js';
 import { parseMetadata } from './metadata.js';
-import { buildQueryString, formatKey, isGuid, type ODataQuery } from './query.js';
+import { buildQueryString, formatKey, isGuid, type ODataQuery, type RecordKey } from './query.js';
 import { parseRoutesResponse } from './routes.js';
 import type {
   ApiRoute,
@@ -16,6 +16,25 @@ import type {
 
 export const DEFAULT_BASE_URL = 'https://api.businesscentral.dynamics.com';
 export const STANDARD_ROUTE = 'v2.0';
+export const ODATA_V4_ROUTE = 'ODataV4';
+
+function isODataV4Route(route: string | undefined): boolean {
+  return route?.toLowerCase() === ODATA_V4_ROUTE.toLowerCase();
+}
+
+export function resolveEndpointRoots(profile: ProfileConfig): {
+  apiRoot: string;
+  odataRoot: string;
+} {
+  const base = (profile.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
+  const environmentRoot = `${base}/v2.0/${profile.tenantId}/${encodeURIComponent(
+    profile.environment,
+  )}`;
+  return {
+    apiRoot: `${environmentRoot}/api`,
+    odataRoot: `${environmentRoot}/${ODATA_V4_ROUTE}`,
+  };
+}
 
 export interface BcClientOptions {
   profile: ProfileConfig;
@@ -27,7 +46,7 @@ export interface BcClientOptions {
 }
 
 export interface RecordOptions {
-  /** API route path, e.g. `v2.0` or `contoso/fieldops/v1.0`. Default `v2.0`. */
+  /** Endpoint route, e.g. `v2.0`, `contoso/fieldops/v1.0`, or `ODataV4`. */
   route?: string;
   /** Company name/displayName/GUID; falls back to the profile's company. */
   company?: string;
@@ -86,16 +105,14 @@ export function findCompany(companies: BcRecord[], target: string): BcRecord | u
 export class BcClient {
   readonly profile: ProfileConfig;
   readonly apiRoot: string;
+  readonly odataRoot: string;
   private readonly http: BcHttp;
   private readonly cache: MetadataCache;
   private readonly companyIds = new Map<string, string>();
 
   constructor(options: BcClientOptions) {
     this.profile = options.profile;
-    const base = (options.profile.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
-    this.apiRoot = `${base}/v2.0/${options.profile.tenantId}/${encodeURIComponent(
-      options.profile.environment,
-    )}/api`;
+    ({ apiRoot: this.apiRoot, odataRoot: this.odataRoot } = resolveEndpointRoots(options.profile));
     this.http = new BcHttp({
       auth: options.auth,
       fetch: options.fetch,
@@ -115,6 +132,17 @@ export class BcClient {
    * probe, and finally to the standard v2.0 route which always exists.
    */
   async listRoutes(): Promise<ApiRoute[]> {
+    const routes = await this.listApiRoutes();
+    try {
+      const services = await this.listODataServices();
+      if (services.size) routes.push({ path: ODATA_V4_ROUTE, version: 'v4.0' });
+    } catch (err) {
+      if (!(err instanceof NavApiError)) throw err;
+    }
+    return routes;
+  }
+
+  private async listApiRoutes(): Promise<ApiRoute[]> {
     const fromRuntime = await this.routesFromRuntimeApi();
     if (fromRuntime.length) return fromRuntime;
     try {
@@ -127,6 +155,24 @@ export class BcClient {
       }
       throw err;
     }
+  }
+
+  private async listODataServices(): Promise<Set<string>> {
+    const { data } = await this.http.request('GET', `${this.odataRoot}/`);
+    const value = (data as { value?: unknown } | undefined)?.value;
+    if (!Array.isArray(value)) {
+      throw new NavApiError(`Invalid OData service document at ${this.odataRoot}`);
+    }
+    return new Set(
+      value
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') return undefined;
+          const candidate = entry as { name?: unknown; url?: unknown };
+          if (typeof candidate.name === 'string' && candidate.name) return candidate.name;
+          return typeof candidate.url === 'string' && candidate.url ? candidate.url : undefined;
+        })
+        .filter((name): name is string => Boolean(name)),
+    );
   }
 
   private async routesFromRuntimeApi(): Promise<ApiRoute[]> {
@@ -153,9 +199,21 @@ export class BcClient {
     routePath: string,
     opts: { refresh?: boolean } = {},
   ): Promise<CachedRouteMetadata> {
+    if (isODataV4Route(routePath)) routePath = ODATA_V4_ROUTE;
     if (!opts.refresh) {
       const cached = await this.cache.get(this.profile.name, routePath);
       if (cached) return cached;
+    }
+    if (isODataV4Route(routePath)) {
+      const [services, response] = await Promise.all([
+        this.listODataServices(),
+        this.http.request('GET', `${this.odataRoot}/$metadata`, {
+          headers: { accept: 'application/xml' },
+        }),
+      ]);
+      const metadata = parseMetadata(response.text);
+      metadata.entitySets = metadata.entitySets.filter((entitySet) => services.has(entitySet.name));
+      return this.cache.set(this.profile.name, routePath, metadata);
     }
     const { text } = await this.http.request('GET', `${this.apiRoot}/${routePath}/$metadata`, {
       headers: { accept: 'application/xml' },
@@ -216,6 +274,11 @@ export class BcClient {
 
   private async collectionUrl(entitySet: string, opts: RecordOptions): Promise<string> {
     const route = opts.route ?? STANDARD_ROUTE;
+    if (isODataV4Route(route)) {
+      if (entitySet === 'Company') return `${this.odataRoot}/Company`;
+      const companyId = await this.resolveCompanyId(opts.company);
+      return `${this.odataRoot}/Company(Id=${companyId})/${entitySet}`;
+    }
     if (COMPANY_UNSCOPED.has(entitySet)) {
       return `${this.apiRoot}/${route}/${entitySet}`;
     }
@@ -239,7 +302,18 @@ export class BcClient {
     let nextLink: string | undefined;
     let count: number | undefined;
     while (url) {
-      const { data } = await this.http.request('GET', url, { headers });
+      let data: unknown;
+      try {
+        ({ data } = await this.http.request('GET', url, { headers }));
+      } catch (error) {
+        if (error instanceof Error) {
+          if (!error.message.includes(`GET ${url}`)) {
+            error.message = `${error.message} (GET ${url})`;
+          }
+          throw error;
+        }
+        throw new NavApiError(`Failed to read ${url}`, { cause: error });
+      }
       const page = data as {
         value?: BcRecord[];
         '@odata.nextLink'?: string;
@@ -260,7 +334,7 @@ export class BcClient {
    */
   async getNavigation(
     entitySet: string,
-    id: string,
+    id: RecordKey,
     navProperty: string,
     opts: RecordOptions = {},
   ): Promise<{ kind: 'collection' | 'record'; items: BcRecord[] }> {
@@ -283,7 +357,7 @@ export class BcClient {
     return { items: page.value ?? [], nextLink: page['@odata.nextLink'] };
   }
 
-  async getRecord(entitySet: string, id: string, opts: RecordOptions = {}): Promise<BcRecord> {
+  async getRecord(entitySet: string, id: RecordKey, opts: RecordOptions = {}): Promise<BcRecord> {
     const url = `${await this.collectionUrl(entitySet, opts)}(${formatKey(id)})`;
     const { data } = await this.http.request('GET', url);
     return data as BcRecord;
@@ -306,7 +380,7 @@ export class BcClient {
    */
   async update(
     entitySet: string,
-    id: string,
+    id: RecordKey,
     patch: unknown,
     opts: RecordOptions & { etag?: string } = {},
   ): Promise<BcRecord> {
@@ -326,7 +400,7 @@ export class BcClient {
   /** DELETE with the same ETag handling as {@link update}. */
   async deleteRecord(
     entitySet: string,
-    id: string,
+    id: RecordKey,
     opts: RecordOptions & { etag?: string } = {},
   ): Promise<void> {
     const url = `${await this.collectionUrl(entitySet, opts)}(${formatKey(id)})`;
@@ -354,6 +428,7 @@ export class BcClient {
     action: string,
     opts: RecordOptions & { parameters?: unknown } = {},
   ): Promise<BcRecord | undefined> {
+    this.assertApiRouteOperation(opts.route, 'Bound actions');
     const qualified = await this.qualifyAction(action, opts.route);
     const url = `${await this.collectionUrl(entitySet, opts)}(${formatKey(id)})/${qualified}`;
     const { status, data } = await this.http.request('POST', url, {
@@ -379,6 +454,7 @@ export class BcClient {
    */
   async batch(requests: BatchRequest[], opts: RecordOptions = {}): Promise<BatchResponse[]> {
     const route = opts.route ?? STANDARD_ROUTE;
+    this.assertApiRouteOperation(route, 'JSON batch');
     const needsCompany = requests.some((r) => r.url.includes('{company}'));
     const companyId = needsCompany ? await this.resolveCompanyId(opts.company) : undefined;
 
@@ -417,5 +493,11 @@ export class BcClient {
       );
     }
     return etag;
+  }
+
+  private assertApiRouteOperation(route: string | undefined, operation: string): void {
+    if (isODataV4Route(route)) {
+      throw new NavApiError(`${operation} isn't supported for ODataV4 published web services.`);
+    }
   }
 }

@@ -41,4 +41,18 @@ describe('formatKey', () => {
     expect(formatKey('10000')).toBe("'10000'");
     expect(formatKey("O'Brien")).toBe("'O''Brien'");
   });
+
+  it('formats named single and composite keys with typed values', () => {
+    expect(formatKey({ No: '10000' })).toBe("No='10000'");
+    expect(formatKey({ Document_Type: 'Order', Document_No: "O'Brien", Line_No: 10 })).toBe(
+      "Document_Type='Order',Document_No='O''Brien',Line_No=10",
+    );
+    expect(formatKey({ Enabled: true })).toBe('Enabled=true');
+  });
+
+  it('rejects empty keys, empty field names, and non-finite values', () => {
+    expect(() => formatKey({})).toThrow(/cannot be empty/);
+    expect(() => formatKey({ ' ': 'value' })).toThrow(/field names cannot be empty/);
+    expect(() => formatKey({ Value: Number.NaN })).toThrow(/non-finite/);
+  });
 });
