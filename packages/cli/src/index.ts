@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { HttpError, NavApiError } from '@navapi/core';
 import pc from 'picocolors';
 import { buildProgram } from './program.js';

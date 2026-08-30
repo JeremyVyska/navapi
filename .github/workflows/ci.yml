@@ -34,6 +34,11 @@ jobs:
 
       - run: pnpm lint
 
+      # The test suites import source modules, so nothing else ever executes
+      # the built binary — a bad banner or a broken entry point ships green.
+      - name: Smoke the built CLI
+        run: node packages/cli/dist/index.js --version
+
       - run: pnpm test
         env:
           # never touch a runner's real keychain
