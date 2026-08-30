@@ -195,6 +195,47 @@ describe('UI server security and lifecycle', () => {
 });
 
 describe('UI API flows', () => {
+  it('keeps a read-only profile read-only when saved from the web form', async () => {
+    await writeFile(
+      path.join(configDir, 'profiles.json'),
+      JSON.stringify({
+        profiles: {
+          ro: {
+            name: 'ro',
+            tenantId: 'tenant',
+            environment: 'Sandbox',
+            auth: { type: 'clientSecret', clientId: 'client' },
+            readOnly: true,
+          },
+        },
+        defaultProfile: 'ro',
+      }),
+      'utf8',
+    );
+    const server = await start();
+
+    const save = await request(server, '/api/profiles', {
+      method: 'POST',
+      body: JSON.stringify({
+        profile: {
+          name: 'ro',
+          tenantId: 'tenant',
+          clientId: 'client',
+          clientSecret: 'secret',
+          environment: 'Sandbox',
+          company: 'CRONUS',
+        },
+        originalName: 'ro',
+      }),
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(save.status).toBe(200);
+
+    const after = JSON.parse(await readFile(path.join(configDir, 'profiles.json'), 'utf8'));
+    expect(after.profiles.ro.readOnly).toBe(true);
+    expect(after.profiles.ro.company).toBe('CRONUS');
+  });
+
   it('refuses to rewrite an Azure CLI profile as a client-secret one', async () => {
     await writeFile(
       path.join(configDir, 'profiles.json'),

@@ -459,6 +459,9 @@ export async function startUiServer(options: UiServerOptions = {}): Promise<UiSe
       if (!profile.clientSecret && !currentSecret) {
         throw new ApiError(400, 'A client secret is required.');
       }
+      // The web form has no read-only control, so carry the stored flag
+      // through rather than clearing a guardrail the user set elsewhere.
+      const storedReadOnly = profiles.find((item) => item.name === profile.name)?.readOnly;
       await profileStore.upsert({
         name: profile.name,
         tenantId: profile.tenantId,
@@ -466,6 +469,7 @@ export async function startUiServer(options: UiServerOptions = {}): Promise<UiSe
         environment: profile.environment,
         company: profile.company,
         baseUrl: profile.baseUrl,
+        readOnly: storedReadOnly,
       });
       if (profile.clientSecret) await secret.store.set(profile.name, profile.clientSecret);
       preferredProfile = profile.name;

@@ -520,6 +520,9 @@ export class BraiderClient {
     const row = await this.client.create('read', body, {
       route: this.route,
       company: opts.company,
+      // A Braider read is a POST because the filters go in the body; it
+      // changes nothing, so a read-only profile may still run it.
+      postAsQuery: true,
     });
     return this.toReadResult(row, opts.raw);
   }

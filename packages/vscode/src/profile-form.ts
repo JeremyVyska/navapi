@@ -87,6 +87,7 @@ export class ProfileFormPanel {
         environment: existing?.environment ?? '',
         company: existing?.company ?? '',
         baseUrl: existing?.baseUrl ?? '',
+        readOnly: Boolean(existing?.readOnly),
       },
     };
     this.panel.webview.html = renderFormHtml(init, getNonce());
@@ -207,6 +208,7 @@ export class ProfileFormPanel {
         environment: values.environment,
         company: values.company || undefined,
         baseUrl: values.baseUrl || undefined,
+        readOnly: values.readOnly ? true : undefined,
       });
       if (secret) await (await resolveSecretStore(dir)).store.set(name, secret);
       // A successful test already fetched companies; cache them for the tree.

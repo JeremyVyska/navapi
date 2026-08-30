@@ -12,6 +12,8 @@ export interface ProfileFormValues {
   environment: string;
   company: string;
   baseUrl: string;
+  /** Refuse writes through this profile. A guardrail, not a security boundary. */
+  readOnly: boolean;
 }
 
 export interface FormInit {
@@ -43,6 +45,10 @@ export function renderFormHtml(init: FormInit, nonce: string): string {
   input:focus, select:focus { outline: 1px solid var(--vscode-focusBorder); }
   input[readonly] { opacity: .6; }
   .hidden { display: none; }
+  /* the global input rule is width:100%, which would stretch a checkbox */
+  label.check { display: flex; gap: 8px; align-items: center; margin: 20px 0 0; }
+  label.check input { width: auto; flex: none; margin: 0; }
+  p.hint { color: var(--vscode-descriptionForeground); font-size: 12px; margin: 6px 0 0; line-height: 1.5; }
   .inline { display: flex; gap: 8px; align-items: center; }
   button.link { background: none; color: var(--vscode-textLink-foreground); padding: 4px 2px; white-space: nowrap; }
   #azAccountStatus { color: var(--vscode-descriptionForeground); font-size: 12px; margin-top: 4px; min-height: 16px; }
@@ -103,6 +109,17 @@ export function renderFormHtml(init: FormInit, nonce: string): string {
   <label for="baseUrl">API base URL <span class="hint">— optional, for sovereign clouds</span></label>
   <input id="baseUrl" placeholder="https://api.businesscentral.dynamics.com">
 
+  <label class="check">
+    <input id="readOnly" type="checkbox">
+    <span>Read-only — refuse every write through this profile</span>
+  </label>
+  <p class="hint">
+    Catches an accidental or hallucinated write from an agent or a mistyped command.
+    It is not a security boundary: anything that can edit profiles.json can clear it,
+    and the credential stays write-capable. For real enforcement, give the app
+    registration or user a read-only Business Central permission set.
+  </p>
+
   <div class="row">
     <button id="test">Test Connection</button>
     <button id="save"></button>
@@ -122,6 +139,7 @@ export function renderFormHtml(init: FormInit, nonce: string): string {
       init.mode === 'edit' ? 'Edit Profile: ' + init.values.name : 'Add Profile';
     el('save').textContent = init.mode === 'edit' ? 'Save Changes' : 'Save Profile';
     for (const f of FIELDS) el(f).value = init.values[f];
+    el('readOnly').checked = Boolean(init.values.readOnly);
     if (init.mode === 'edit') {
       el('name').readOnly = true;
       if (init.hasStoredSecret) el('clientSecret').placeholder = '(unchanged — leave blank to keep)';
@@ -188,6 +206,7 @@ export function renderFormHtml(init: FormInit, nonce: string): string {
     function values() {
       const out = {};
       for (const f of FIELDS) out[f] = el(f).value.trim();
+      out.readOnly = el('readOnly').checked;
       return out;
     }
 

@@ -125,18 +125,19 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
     'list_profiles',
     {
       description:
-        'List configured navapi profiles. Each profile pins one Business Central environment (tenant + environment + default company).',
+        'List configured navapi profiles. Each profile pins one Business Central environment (tenant + environment + default company). A profile marked readOnly refuses every write — do not attempt create, update, delete, or actions against it.',
       inputSchema: {},
     },
     safe(async () => {
       const { profiles, defaultProfile } = await store.listAll();
       return {
         defaultProfile,
-        profiles: profiles.map(({ name, tenantId, environment, company }) => ({
+        profiles: profiles.map(({ name, tenantId, environment, company, readOnly }) => ({
           name,
           tenantId,
           environment,
           company,
+          readOnly: Boolean(readOnly),
         })),
       };
     }),

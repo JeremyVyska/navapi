@@ -12,6 +12,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
   name, route, and entity type, then opens the records grid for the one you
   pick. The search runs against the on-disk cache; opening the grid fetches
   the first page, the same as clicking the entity set in the tree.
+- **Read-only profiles.** A checkbox on the profile form marks a profile
+  read-only, and every write through it is refused — create, update, delete,
+  bound actions, and writes inside a `$batch`. A guardrail against an
+  accidental or agent-hallucinated write, not a security boundary; the form
+  says so, and points at a read-only BC permission set for real enforcement.
 - **ODataV4 published web services.** Read-only discovery and browsing for
   published page and query web services. They appear under **ODataV4** in the
   Endpoint Browser and use the existing filtering, selection, sorting, counts,

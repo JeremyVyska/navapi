@@ -11,6 +11,10 @@ navapi profile add contoso-prod --tenant $TENANT_ID --client-id $CLIENT_ID \
 navapi profile add contoso-dev --tenant $TENANT_ID --environment Sandbox-UAT --auth azureCli
 navapi profile az-accounts         # which identities az is signed in as (--az-account picks one)
 
+# Refuse every write through a profile (guardrail against accidental/agent writes,
+# NOT a security boundary — use a read-only BC permission set for that)
+navapi profile add contoso-prod --tenant $TENANT_ID --client-id $CLIENT_ID --environment Production --read-only
+
 navapi company list                # companies in the environment (● = current default)
 navapi company use                 # switch the default company (interactive picker on a TTY)
 navapi routes                      # every API route the environment exposes

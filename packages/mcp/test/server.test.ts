@@ -240,7 +240,14 @@ describe('navapi MCP server', () => {
     const data = parseText(await client.callTool({ name: 'list_profiles', arguments: {} }));
     expect(data.defaultProfile).toBe('test');
     expect(data.profiles).toEqual([
-      { name: 'test', tenantId: 'tenant-1', environment: 'Sandbox', company: 'CRONUS' },
+      {
+        name: 'test',
+        tenantId: 'tenant-1',
+        environment: 'Sandbox',
+        company: 'CRONUS',
+        // surfaced so an agent can see the guardrail before attempting a write
+        readOnly: false,
+      },
     ]);
   });
 

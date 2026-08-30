@@ -36,7 +36,11 @@ const COMPANIES_ROUTE: MockRoute = {
 
 let tmpDir: string;
 
-function makeClient(routes: MockRoute[], company = 'CRONUS International Ltd.') {
+function makeClient(
+  routes: MockRoute[],
+  company = 'CRONUS International Ltd.',
+  extra: { readOnly?: boolean } = {},
+) {
   const { fetchImpl, calls } = mockFetch(routes);
   const client = new BcClient({
     profile: {
@@ -45,6 +49,7 @@ function makeClient(routes: MockRoute[], company = 'CRONUS International Ltd.') 
       clientId: 'c',
       environment: 'Sandbox',
       company,
+      ...extra,
     },
     auth: new StaticTokenProvider('tok'),
     fetch: fetchImpl,
@@ -700,5 +705,91 @@ describe('BcClient create', () => {
     expect(created.id).toBe('new-1');
     const post = calls.find((c) => c.method === 'POST');
     expect(post?.body).toBe(JSON.stringify({ displayName: 'New Co' }));
+  });
+});
+
+describe('read-only profiles', () => {
+  const readOnly = (routes: MockRoute[] = []) => makeClient(routes, COMPANY_ID, { readOnly: true });
+
+  it('refuses create, update, delete, and bound actions without any request', async () => {
+    const { client, calls } = readOnly();
+
+    await expect(client.create('customers', { displayName: 'X' })).rejects.toThrow(
+      /Profile "test" is read-only/,
+    );
+    await expect(client.update('customers', CUSTOMER_ID, { blocked: 'All' })).rejects.toThrow(
+      /read-only/,
+    );
+    await expect(client.deleteRecord('customers', CUSTOMER_ID)).rejects.toThrow(/read-only/);
+    await expect(client.callAction('salesOrders', CUSTOMER_ID, 'post')).rejects.toThrow(
+      /read-only/,
+    );
+
+    // it refuses before the wire, so no ETag GET leaks out either
+    expect(calls).toEqual([]);
+  });
+
+  it('names the profile and says it is not a security boundary', async () => {
+    const { client } = readOnly();
+    await expect(client.create('customers', {})).rejects.toThrow(
+      /not a security boundary .* read-only BC permission set/s,
+    );
+  });
+
+  it('refuses a $batch when any sub-request is a write, not just the outer POST', async () => {
+    const { client, calls } = readOnly();
+
+    await expect(
+      client.batch([
+        { method: 'GET', url: 'companies({company})/customers?$top=1' },
+        { method: 'PATCH', url: 'companies({company})/customers(1)', body: { blocked: 'All' } },
+      ]),
+    ).rejects.toThrow(/read-only.*\$batch containing 1 write\(s\) \(PATCH\)/s);
+    expect(calls).toEqual([]);
+  });
+
+  it('still allows an all-GET $batch', async () => {
+    const { client } = readOnly([
+      {
+        method: 'POST',
+        match: (url) => url.endsWith('/$batch'),
+        body: { responses: [{ id: '1', status: 200, body: { value: [] } }] },
+      },
+    ]);
+
+    const responses = await client.batch([{ method: 'GET', url: 'customers?$top=1' }]);
+    expect(responses[0].ok).toBe(true);
+  });
+
+  it('still allows reads', async () => {
+    const { client } = readOnly([
+      {
+        method: 'GET',
+        match: (url) => url.includes('/customers'),
+        body: { value: [{ id: CUSTOMER_ID }] },
+      },
+    ]);
+    const { items } = await client.list('customers');
+    expect(items).toHaveLength(1);
+  });
+
+  it('allows a POST that is semantically a query (Data Braider reads)', async () => {
+    const { client } = readOnly([
+      { method: 'POST', match: (url) => url.includes('/read'), body: { jsonResult: '[]' } },
+    ]);
+
+    await expect(
+      client.create('read', { code: 'CUST' }, { postAsQuery: true }),
+    ).resolves.toBeDefined();
+  });
+
+  it('leaves a normal profile alone', async () => {
+    const { client } = makeClient([
+      COMPANIES_ROUTE,
+      { method: 'POST', match: (url) => url.includes('/customers'), body: { id: CUSTOMER_ID } },
+    ]);
+    await expect(client.create('customers', { displayName: 'X' })).resolves.toMatchObject({
+      id: CUSTOMER_ID,
+    });
   });
 });

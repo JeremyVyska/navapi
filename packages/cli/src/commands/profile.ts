@@ -156,6 +156,11 @@ export function registerProfile(program: Command): void {
     .option('--company <company>', 'Default company (name, displayName, or GUID)')
     .option('--secret <secret>', 'Client secret (omit to be prompted, or set NAVAPI_CLIENT_SECRET)')
     .option('--base-url <url>', 'Override the BC API host')
+    .option(
+      '--read-only',
+      'Refuse every write through this profile (guardrail against accidental ' +
+        'writes, not a security boundary — use a read-only BC permission set for that)',
+    )
     .option('--default', 'Make this the default profile')
     .action(async (name: string, opts) => {
       const authType = opts.auth ? parseAuthType(opts.auth) : 'clientSecret';
@@ -210,6 +215,7 @@ export function registerProfile(program: Command): void {
           environment: opts.environment,
           company: opts.company,
           baseUrl: opts.baseUrl,
+          readOnly: opts.readOnly ? true : undefined,
         },
         { makeDefault: Boolean(opts.default) },
       );
@@ -260,8 +266,9 @@ export function registerProfile(program: Command): void {
           environment: p.environment,
           tenant: p.tenantId,
           company: p.company ?? '',
+          access: p.readOnly ? pc.yellow('read-only') : '',
         })),
-        ['', 'name', 'environment', 'tenant', 'company'],
+        ['', 'name', 'environment', 'tenant', 'company', 'access'],
       );
     });
 

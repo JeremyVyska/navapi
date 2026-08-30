@@ -23,7 +23,9 @@ function trackListeners(): void {
   };
 }
 
-function mountForm(overrides: { mode?: 'add' | 'edit'; azAccount?: string } = {}): void {
+function mountForm(
+  overrides: { mode?: 'add' | 'edit'; azAccount?: string; readOnly?: boolean } = {},
+): void {
   posted.length = 0;
   trackListeners();
   (window as any).acquireVsCodeApi = () => ({
@@ -43,6 +45,7 @@ function mountForm(overrides: { mode?: 'add' | 'edit'; azAccount?: string } = {}
         environment: 'Production',
         company: '',
         baseUrl: '',
+        readOnly: overrides.readOnly ?? false,
       },
     },
     'TESTNONCE',
@@ -130,5 +133,41 @@ describe('profile form — az identity dropdown', () => {
     select().dispatchEvent(new Event('change'));
     deliverIdentities({ user: 'a@x.com' }); // b@y.com signed out in the meantime
     expect(select().value).toBe('');
+  });
+});
+
+describe('profile form — read-only guardrail', () => {
+  beforeEach(() => {
+    document.documentElement.innerHTML = '';
+  });
+
+  afterEach(() => {
+    for (const off of unhook) off();
+    unhook = [];
+  });
+
+  const checkbox = () => document.getElementById('readOnly') as HTMLInputElement;
+
+  it('reflects a profile already marked read-only', () => {
+    mountForm({ mode: 'edit', readOnly: true });
+    expect(checkbox().checked).toBe(true);
+  });
+
+  it('is off by default on a new profile', () => {
+    mountForm();
+    expect(checkbox().checked).toBe(false);
+  });
+
+  it('sends readOnly as a boolean, not the empty string a text field would give', () => {
+    mountForm();
+    checkbox().checked = true;
+    (document.getElementById('test') as HTMLButtonElement).click();
+    const sent = posted.find((m) => m.type === 'test');
+    expect(sent.values.readOnly).toBe(true);
+  });
+
+  it('says plainly that it is not a security boundary', () => {
+    mountForm();
+    expect(document.body.textContent).toContain('not a security boundary');
   });
 });

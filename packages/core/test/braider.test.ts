@@ -31,7 +31,7 @@ const COMPANIES_ROUTE: MockRoute = {
 
 let tmpDir: string;
 
-function makeClient(routes: MockRoute[]) {
+function makeClient(routes: MockRoute[], extra: { readOnly?: boolean } = {}) {
   const { fetchImpl, calls } = mockFetch(routes);
   const client = new BcClient({
     profile: {
@@ -40,6 +40,7 @@ function makeClient(routes: MockRoute[]) {
       clientId: 'c',
       environment: 'Sandbox',
       company: 'CRONUS',
+      ...extra,
     },
     auth: new StaticTokenProvider('tok'),
     fetch: fetchImpl,
@@ -773,5 +774,46 @@ describe('BraiderClient config CRUD', () => {
       endpointType: 'Per_x0020_Record',
       enabled: true,
     });
+  });
+});
+
+describe('BraiderClient on a read-only profile', () => {
+  // A Braider read is a POST (the filters go in the body), so a guard keyed on
+  // the HTTP method rather than on intent would break reads entirely.
+  it('still runs a filtered read, which is a POST', async () => {
+    const { client } = makeClient(
+      [
+        COMPANIES_ROUTE,
+        {
+          method: 'POST',
+          match: `${BRAIDER}/read`,
+          body: {
+            code: 'CUSTOMERS',
+            jsonResult: JSON.stringify([{ 'Customer.No': '10000' }]),
+            pageStart: 1,
+            pageSize: 100,
+            topLevelRecordCount: 1,
+            includedRecordCount: 1,
+          },
+        },
+      ],
+      { readOnly: true },
+    );
+
+    const braider = new BraiderClient(client, level1Info());
+    const result = await braider.readEndpoint('CUSTOMERS', {
+      filters: [{ table: 'Customer', field: 'No', value: '10000' }],
+    });
+    expect(result.records).toEqual([{ 'Customer.No': '10000' }]);
+  });
+
+  it('refuses a write endpoint submission', async () => {
+    const { client, calls } = makeClient([COMPANIES_ROUTE], { readOnly: true });
+    const braider = new BraiderClient(client, level1Info());
+
+    await expect(
+      braider.writeEndpoint('CUSTOMERS', [{ Action: 'Insert', 'Customer.No': '10000' }]),
+    ).rejects.toThrow(/Profile "test" is read-only/);
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
   });
 });

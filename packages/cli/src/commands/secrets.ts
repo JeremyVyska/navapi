@@ -11,6 +11,8 @@ import { emitJson, printTable, wantJson } from '../output.js';
 
 interface SecretLocation {
   profile: string;
+  /** Writes are refused on this profile. A guardrail, not a security boundary. */
+  readOnly: boolean;
   /** False for az-cli profiles, which authenticate without a stored secret. */
   secretRequired: boolean;
   keychain: boolean;
@@ -27,6 +29,7 @@ async function locateSecrets(): Promise<{ keychainAvailable: boolean; rows: Secr
   for (const p of profiles) {
     rows.push({
       profile: p.name,
+      readOnly: Boolean(p.readOnly),
       secretRequired: p.auth.type !== 'azureCli',
       keychain: keychain ? (await keychain.get(p.name)) !== undefined : false,
       file: (await file.get(p.name)) !== undefined,
@@ -72,8 +75,9 @@ export function registerSecrets(program: Command): void {
           // otherwise read as a secret that has gone missing.
           keychain: r.keychain ? '✔' : r.secretRequired ? '' : pc.dim('no secret required'),
           'plaintext file': r.file ? pc.yellow('⚠ yes') : '',
+          access: r.readOnly ? pc.yellow('read-only') : '',
         })),
-        ['profile', 'auth', 'keychain', 'plaintext file'],
+        ['profile', 'auth', 'keychain', 'plaintext file', 'access'],
       );
       if (rows.some((r) => r.file) && keychainAvailable) {
         console.log(pc.dim('Run "navapi secrets migrate" to move file secrets into the keychain.'));

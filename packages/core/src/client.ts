@@ -366,8 +366,12 @@ export class BcClient {
   async create(
     entitySet: string,
     body: unknown,
-    opts: RecordOptions & { etag?: string } = {},
+    opts: RecordOptions & { etag?: string; postAsQuery?: boolean } = {},
   ): Promise<BcRecord> {
+    // Not every POST is a write: Data Braider's `read` endpoint takes its
+    // filters in a POST body, so the read-only guard keys off intent rather
+    // than the HTTP method. See `postAsQuery`.
+    if (!opts.postAsQuery) this.assertWritable(`creating a ${entitySet} record`);
     const url = await this.collectionUrl(entitySet, opts);
     const { data } = await this.http.request('POST', url, { body, ifMatch: opts.etag });
     return data as BcRecord;
@@ -384,6 +388,7 @@ export class BcClient {
     patch: unknown,
     opts: RecordOptions & { etag?: string } = {},
   ): Promise<BcRecord> {
+    this.assertWritable(`updating a ${entitySet} record`);
     const url = `${await this.collectionUrl(entitySet, opts)}(${formatKey(id)})`;
     let etag = opts.etag ?? (await this.fetchEtag(url));
     try {
@@ -403,6 +408,7 @@ export class BcClient {
     id: RecordKey,
     opts: RecordOptions & { etag?: string } = {},
   ): Promise<void> {
+    this.assertWritable(`deleting a ${entitySet} record`);
     const url = `${await this.collectionUrl(entitySet, opts)}(${formatKey(id)})`;
     let etag = opts.etag ?? (await this.fetchEtag(url));
     try {
@@ -428,6 +434,7 @@ export class BcClient {
     action: string,
     opts: RecordOptions & { parameters?: unknown } = {},
   ): Promise<BcRecord | undefined> {
+    this.assertWritable(`invoking the action "${action}"`);
     this.assertApiRouteOperation(opts.route, 'Bound actions');
     const qualified = await this.qualifyAction(action, opts.route);
     const url = `${await this.collectionUrl(entitySet, opts)}(${formatKey(id)})/${qualified}`;
@@ -454,6 +461,13 @@ export class BcClient {
    */
   async batch(requests: BatchRequest[], opts: RecordOptions = {}): Promise<BatchResponse[]> {
     const route = opts.route ?? STANDARD_ROUTE;
+    // The outer call is always a POST, so checking it would refuse an
+    // all-GET batch and, worse, pass a batch whose writes hide inside it.
+    const writes = requests.filter((r) => r.method !== 'GET');
+    if (writes.length) {
+      const methods = [...new Set(writes.map((r) => r.method))].join(', ');
+      this.assertWritable(`a $batch containing ${writes.length} write(s) (${methods})`);
+    }
     this.assertApiRouteOperation(route, 'JSON batch');
     const needsCompany = requests.some((r) => r.url.includes('{company}'));
     const companyId = needsCompany ? await this.resolveCompanyId(opts.company) : undefined;
@@ -493,6 +507,22 @@ export class BcClient {
       );
     }
     return etag;
+  }
+
+  /**
+   * Refuses a write on a read-only profile. Every write in navapi funnels
+   * through the five callers of this method, so the flag cannot be bypassed
+   * by using a different face — but see {@link ProfileConfig.readOnly}: this
+   * is a guardrail against mistakes, not a security boundary.
+   */
+  private assertWritable(operation: string): void {
+    if (!this.profile.readOnly) return;
+    throw new NavApiError(
+      `Profile "${this.profile.name}" is read-only, so ${operation} was refused. ` +
+        'Clear readOnly on the profile to allow writes. Note this is a guardrail ' +
+        'against accidental writes, not a security boundary — real enforcement is a ' +
+        'read-only BC permission set on the credential.',
+    );
   }
 
   private assertApiRouteOperation(route: string | undefined, operation: string): void {

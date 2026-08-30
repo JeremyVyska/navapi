@@ -33,6 +33,18 @@ export interface ProfileConfig {
   company?: string;
   /** Override for the BC API host. Defaults to https://api.businesscentral.dynamics.com */
   baseUrl?: string;
+  /**
+   * Refuse every write through this profile: create, update, delete, bound
+   * actions, and any write inside a `$batch`.
+   *
+   * A guardrail against an accidental or hallucinated write, not a security
+   * boundary — it lives in navapi's own code, on the same machine, under the
+   * same account. Anything that can edit `profiles.json` can clear it, and the
+   * bearer token stays write-capable whoever sends the request. Real
+   * enforcement is a read-only BC permission set on the app registration or
+   * user.
+   */
+  readOnly?: boolean;
 }
 
 /**

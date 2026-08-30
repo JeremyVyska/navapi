@@ -121,6 +121,32 @@ az login --tenant $CUSTOMER_TENANT --allow-no-subscriptions --scope https://api.
 
 So it is the right choice for exploring an environment as yourself, and the wrong one for an unattended integration — use client credentials there.
 
+### Read-only profiles
+
+Mark a profile read-only and every write through it is refused — create, update,
+delete, bound actions, and any write hiding inside a `$batch`:
+
+```bash
+navapi profile add contoso-prod --tenant $TENANT --environment Production --client-id $CLIENT_ID --read-only
+```
+
+The guard sits in `BcClient`, which every face goes through, so the CLI, MCP
+server, VS Code extension, web UI, and Data Braider are all covered. `profile
+list`, `secrets status`, the MCP `list_profiles` tool, and the VS Code profile
+form all show the flag. Data Braider *reads* keep working: they are POSTs
+because the filters travel in the body, and the guard keys off intent rather
+than the HTTP verb.
+
+**This is a guardrail against mistakes, not a security boundary.** It catches an
+accidental or hallucinated write from an agent, and that is all it is for.
+Anything that can edit `~/.navapi/profiles.json` can clear the flag, and the
+credential itself stays write-capable — Business Central's OData API has no
+read-only OAuth scope, so a bearer token good for writes is good for writes
+whoever sends the request. For enforcement that holds regardless of which tool
+sends it, give the app registration or user a **read-only Business Central
+permission set** in the environment. That is a tenant admin task, and it is the
+only thing that actually stops a write.
+
 Or from an agent, via MCP:
 
 ```jsonc
@@ -201,6 +227,7 @@ Roadmap:
 - [x] `@navapi/core`: OAuth client credentials, HTTP client, ETag handling
 - [x] `@navapi/core`: `$metadata` discovery + on-disk cache (routes enumerated via the runtime API's `apiRoutes`, with `/api/routes` and `v2.0` fallbacks)
 - [x] Read-only discovery and browsing for published `/ODataV4` page/query web services
+- [x] Read-only profiles: `--read-only` refuses every write (including writes inside a `$batch`) across all faces — a guardrail against accidental or agent-hallucinated writes, not a security boundary
 - [x] `navapi` CLI: `profile`, `get`, `post`, `patch`, `delete`, `discover` (+ `routes`, `ls`, `companies`)
 - [x] `@navapi/core`: `$batch` support (JSON batch, `{company}` substitution, atomicity groups)
 - [x] `@navapi/core`: bound actions (`Microsoft.NAV.*`, namespace-qualified from cached metadata)
