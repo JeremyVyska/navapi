@@ -69,12 +69,30 @@ to exist on npm first. A package that has never been published — `@navapi/ui`
 was in this position for 0.3.0 — must be published once by hand:
 
 ```bash
-cd packages/ui && npm publish --access public   # real terminal: this prompts for your OTP
+# a real terminal: this prompts for your OTP
+pnpm --filter @navapi/ui publish --access public
+```
+
+**It must be `pnpm publish`, not `npm publish`.** Every package here depends on
+its siblings through `"@navapi/core": "workspace:*"`, and the workspace protocol
+is a pnpm/yarn thing npm does not understand. `npm pack` leaves the literal
+`workspace:*` in the published manifest, which the registry rejects as an
+invalid version range; `pnpm pack` rewrites it to the real version. To see it
+for yourself before publishing anything:
+
+```bash
+pnpm --filter @navapi/ui pack --pack-destination /tmp
+tar -xzOf /tmp/navapi-ui-<version>.tgz package/package.json   # deps must read 0.3.0, not workspace:*
 ```
 
 After that first publish, configure its trusted publisher like the others and it
 joins the automated flow. Until you do, `pnpm -r publish` fails on it and takes
 the whole release job with it.
+
+Publishing it by hand does not clash with the tag that follows: `pnpm publish`
+skips a package whose version is already in the registry — that is what
+`--force` exists to override — so the release job just publishes the other
+three.
 
 ## VS Code Marketplace: still manual, deliberately
 
