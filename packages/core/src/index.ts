@@ -80,6 +80,7 @@ export {
   type ResolvedSecretStore,
   resolveSecretStore,
   type SecretStore,
+  secretServiceAvailable,
 } from './profiles.js';
 export { buildQueryString, formatKey, isGuid, type ODataQuery } from './query.js';
 export { parseRoutesResponse } from './routes.js';
