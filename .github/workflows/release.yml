@@ -1,0 +1,187 @@
+name: Release
+
+# Tag-triggered release. The npm half is fully automated via trusted
+# publishing (OIDC) — there is no NPM_TOKEN, and no OTP prompt, because npm
+# trusts this repository and this workflow file by name rather than a stored
+# credential. Renaming this file breaks publishing until the trusted publisher
+# entries on npmjs.com are updated to match.
+#
+# The VS Code Marketplace half is deliberately NOT automated: publishing an
+# extension currently needs a global Azure DevOps PAT, which Microsoft retires
+# on 2026-12-01, and the Entra replacement is documented only for Azure DevOps
+# Pipelines with a managed identity. So this workflow builds the universal
+# vsix and attaches it to the GitHub Release; uploading it stays a manual step
+# through the Marketplace web UI, which uses a browser session and is not
+# affected by the PAT retirement. See docs/releasing.md.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dryRun:
+        description: 'Build and verify everything, but do not publish or create a release'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          standalone: true
+
+      # npm's OIDC exchange wants Node 22.14+; the test matrix in ci.yml still
+      # covers Node 20 for the library itself.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+
+      - run: pnpm lint
+
+      - run: pnpm test
+        env:
+          NAVAPI_SECRET_BACKEND: file
+
+      - name: Smoke the built CLI
+        run: node packages/cli/dist/index.js --version
+
+      # A tag that disagrees with the manifests publishes the wrong version
+      # under the right name, which cannot be undone on npm. Refuse instead.
+      - name: Check the tag matches every package version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version=$(node -p "require('./packages/core/package.json').version")
+            echo "Dry run: using $version from the manifests."
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          fail=0
+          for pkg in core cli mcp ui vscode; do
+            actual=$(node -p "require('./packages/$pkg/package.json').version")
+            if [ "$actual" != "$version" ]; then
+              echo "::error::packages/$pkg is $actual, expected $version"
+              fail=1
+            fi
+          done
+          exit $fail
+
+  publish-npm:
+    name: publish to npm
+    needs: verify
+    runs-on: ubuntu-latest
+    # Gated: a bad tag cannot publish on its own. Configure required reviewers
+    # on this environment in repo settings, or the gate is decorative.
+    environment: npm-release
+    permissions:
+      contents: read
+      # This is what makes trusted publishing work — it lets the job mint the
+      # short-lived OIDC token npm exchanges for publish rights.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          standalone: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+
+      # `-r` skips private packages, so navapi-vscode is not attempted here.
+      # --no-git-checks because a tag build is a detached HEAD.
+      - name: Publish
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dryRun }}
+        run: pnpm -r publish --no-git-checks --access public
+
+      - name: Dry run
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dryRun }}
+        run: pnpm -r publish --no-git-checks --access public --dry-run
+
+  package-vsix:
+    name: package the universal vsix
+    needs: verify
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          standalone: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+
+      # One file carrying every platform's keyring binding — the artifact the
+      # Marketplace web upload wants.
+      - run: pnpm --filter navapi-vscode package:universal
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: packages/vscode/dist/vsix/*.vsix
+          if-no-files-found: error
+
+  github-release:
+    name: draft the GitHub release
+    needs: [verify, publish-npm, package-vsix]
+    if: ${{ github.event_name != 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: vsix
+          path: vsix
+
+      # Drafted, not published: the release is the handoff point for the
+      # manual Marketplace upload, so a human sees it before anyone else does.
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<'NOTES'
+          Published to npm: `@navapi/core`, `@navapi/cli`, `@navapi/mcp`, `@navapi/ui`.
+
+          The VS Code extension is attached below as a universal `.vsix`. Upload it at
+          https://marketplace.visualstudio.com/manage/publishers/jeremyvyska to finish
+          the release — that step is manual on purpose; see docs/releasing.md.
+
+          See `packages/vscode/CHANGELOG.md` for what changed.
+          NOTES
+          gh release create "${GITHUB_REF_NAME}" vsix/*.vsix \
+            --draft \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file notes.md

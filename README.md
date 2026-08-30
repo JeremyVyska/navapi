@@ -334,6 +334,14 @@ Still open:
 - **What if this pattern works for D365 F&O too?** Name locks us to BC/NAV lineage. Fine for now, revisit at 1.0.
 - **What if two agents hit the same record via MCP?** Session-scoped ETag cache to prevent stale reads within a conversation.
 
+## Releasing
+
+One tag does it: `git push origin v0.3.0` builds, verifies, publishes the npm
+packages via trusted publishing (no token, no OTP), and drafts a GitHub Release
+with the universal `.vsix` attached. Uploading that to the VS Code Marketplace
+is the one manual step — see [docs/releasing.md](docs/releasing.md), which
+explains why, and what setup the automated half needs.
+
 ## Contributing
 
 Not open for contributions yet — still shaping the core API. Star and watch if you want to be pinged when it's ready. 🌟
