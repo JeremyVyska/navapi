@@ -1,15 +1,22 @@
 import path from 'node:path';
 import { AzureCliAuth, ClientCredentialsAuth, type TokenProvider } from './auth.js';
 import { defaultConfigDir, MetadataCache } from './cache.js';
-import { BcClient } from './client.js';
+import { BcClient, findCompany } from './client.js';
+import { DataQueryClient, MCP_RESOURCE } from './dataquery.js';
 import { NavApiError } from './errors.js';
 import { ProfileStore, resolveSecretStore } from './profiles.js';
+import { isGuid } from './query.js';
 import type { Credential, ProfileConfig, TargetContext } from './types.js';
 
 export interface CreateClientOptions {
   /** Config directory; defaults to NAVAPI_CONFIG_DIR or ~/.navapi */
   configDir?: string;
   fetch?: typeof globalThis.fetch;
+  /**
+   * OAuth resource the token is for. Defaults to the BC API; the MCP server
+   * (data queries) is a different audience reached with the same credential.
+   */
+  resource?: string;
 }
 
 /**
@@ -95,7 +102,11 @@ async function createAuth(
   // Azure CLI auth has no secret to resolve — don't send it down the
   // client-credentials path, which would fail on the missing secret.
   if (credential.type === 'azureCli') {
-    return new AzureCliAuth({ tenantId: profile.tenantId, account: credential.account });
+    return new AzureCliAuth({
+      tenantId: profile.tenantId,
+      account: credential.account,
+      resource: opts.resource,
+    });
   }
   // Client ID first: a credential missing both reads as malformed, and naming
   // the absent client ID says more than asking for a secret to go with it.
@@ -118,6 +129,7 @@ async function createAuth(
     tenantId: profile.tenantId,
     clientId: credential.clientId,
     clientSecret: secret,
+    scope: opts.resource ? `${opts.resource}/.default` : undefined,
     authorityBase: process.env.NAVAPI_AUTHORITY,
     fetch: opts.fetch,
   });
@@ -192,4 +204,62 @@ export async function createClientForSelector(
         ? base.name
         : undefined,
   });
+}
+
+export interface DataQuerySelector extends ClientSelector {
+  /** Company name, display name, or GUID; defaults to the profile's company. */
+  company?: string;
+  /** MCP configuration with Data Query Tools active; omitted = the environment's default. */
+  configurationName?: string;
+}
+
+/**
+ * Builds a data query client under the same resolution rule as every other
+ * call, so `--tenant`/`--environment` overrides mean the same thing here.
+ * Only the token audience differs: the MCP server, not the BC API.
+ */
+export async function createDataQueryClientForSelector(
+  selector: DataQuerySelector = {},
+  opts: CreateClientOptions = {},
+): Promise<DataQueryClient> {
+  const { company, configurationName, ...target } = selector;
+  const mcp = await createClientForSelector(target, { ...opts, resource: MCP_RESOURCE });
+  const wanted = company ?? mcp.profile.company;
+  if (!wanted) {
+    throw new NavApiError(
+      'Data queries run in one company, and none was given. Pass a company, or set one on the profile.',
+    );
+  }
+  return new DataQueryClient({
+    auth: mcp.auth,
+    target: {
+      tenantId: mcp.profile.tenantId,
+      environment: mcp.profile.environment,
+      company: await companyName(wanted, target, opts),
+      configurationName: configurationName ?? process.env.NAVAPI_MCP_CONFIG,
+    },
+    endpoint: process.env.NAVAPI_MCP_ENDPOINT,
+    fetch: opts.fetch,
+  });
+}
+
+/**
+ * The MCP `Company` header takes the company **name**. Profiles may store a
+ * GUID or display name, so anything that is not obviously a name is looked up
+ * through the BC API (its own audience, hence a second client).
+ */
+async function companyName(
+  company: string,
+  target: ClientSelector,
+  opts: CreateClientOptions,
+): Promise<string> {
+  if (!isGuid(company)) return company;
+  const api = await createClientForSelector(target, opts);
+  const match = findCompany(await api.listCompanies(), company);
+  if (typeof match?.name !== 'string' || !match.name) {
+    throw new NavApiError(
+      `Company "${company}" not found in environment "${api.profile.environment}".`,
+    );
+  }
+  return match.name;
 }

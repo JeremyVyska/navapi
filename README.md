@@ -252,6 +252,28 @@ navapi braider config create --body endpoint-spec.json   # header + lines + fiel
 
 The VS Code extension grows a **Data Braider** section (endpoint browser with Braider-native filters/paging, plus a guided "New Endpoint" flow with table/field pickers), and MCP agents get `braider_*` tools with the write conventions documented in the tool descriptions. On older Braider installs everything except schema/authoring still works — schemas fall back to inference from sampled data.
 
+## Any table: Data Query Tools
+
+Business Central 29 added **Data Query Tools** to its MCP server. They compile and run an AL query on request, so you can read any table, including joins and totals, without an API page for it. navapi uses them with the identity your profile already has:
+
+```bash
+navapi table find "customer, ledger entry"               # table IDs by name
+navapi table find "customers that owe money" --semantic  # or by meaning
+navapi table schema Customer --name balance              # AL field names, options, FlowField formulas
+navapi table relations "Cust. Ledger Entry"              # join paths (--incoming for the reverse)
+navapi query top-customers.al --top 100                  # run an AL query; pages past BC's 50-row limit
+navapi query top-customers.al --validate                 # compile only
+```
+
+MCP agents get the same four tools: `find_tables`, `get_table_schema`, `get_table_relations`, and `run_query`.
+
+Things to know:
+
+- **Off by default.** An admin has to turn the feature on. In the environment, open *Model Context Protocol (MCP) Server Configurations* (page 8350), activate **Data Query Tools** under Server Features, and activate the configuration. Pass its name with `--mcp-config` (MCP tools: `mcpConfig`; env: `NAVAPI_MCP_CONFIG`), or set it as the default configuration. When the feature is off, navapi tells you this and links to the page.
+- **Microsoft bills this feature.** Activating it shows a pricing notice. navapi never turns it on for you.
+- **Read-only.** Queries always run read-only.
+- **Needs a company and a user identity.** Azure CLI credentials work. App-only (client secret) credentials are not tested yet.
+
 ## Architecture
 
 One repo, workspace monorepo (pnpm), five packages:

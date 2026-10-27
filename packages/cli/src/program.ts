@@ -5,6 +5,7 @@ import { registerBraider } from './commands/braider.js';
 import { registerCompany } from './commands/company.js';
 import { registerCredential } from './commands/credential.js';
 import { registerCrud } from './commands/crud.js';
+import { registerDataQuery } from './commands/dataquery.js';
 import { registerDiscover } from './commands/discover.js';
 import { registerProfile } from './commands/profile.js';
 import { registerSecrets } from './commands/secrets.js';
@@ -29,6 +30,7 @@ export function buildProgram(): Command {
   registerAction(program);
   registerCompany(program);
   registerBraider(program);
+  registerDataQuery(program);
   registerSecrets(program);
   registerUi(program);
 

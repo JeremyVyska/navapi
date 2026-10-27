@@ -106,12 +106,15 @@ export class BcClient {
   readonly profile: ProfileConfig;
   readonly apiRoot: string;
   readonly odataRoot: string;
+  /** The token source, so a sibling client (data queries) can reuse the identity. */
+  readonly auth: TokenProvider;
   private readonly http: BcHttp;
   private readonly cache: MetadataCache;
   private readonly companyIds = new Map<string, string>();
 
   constructor(options: BcClientOptions) {
     this.profile = options.profile;
+    this.auth = options.auth;
     ({ apiRoot: this.apiRoot, odataRoot: this.odataRoot } = resolveEndpointRoots(options.profile));
     this.http = new BcHttp({
       auth: options.auth,

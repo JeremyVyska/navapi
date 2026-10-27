@@ -61,6 +61,30 @@ export {
   STANDARD_ROUTE,
 } from './client.js';
 export {
+  DATA_QUERY_MAX_SKIP,
+  DATA_QUERY_MAX_TOP,
+  DATA_QUERY_TOOLS,
+  DataQueryClient,
+  type DataQueryClientOptions,
+  type DataQueryOptions,
+  type DataQueryResult,
+  type DataQueryTarget,
+  DataQueryUnavailableError,
+  encodeMcpHeader,
+  MCP_ENDPOINT,
+  MCP_RESOURCE,
+  mcpConfigPageUrl,
+  parseMcpBody,
+  parseTableSchema,
+  type QueryValidation,
+  type TableField,
+  type TableMatch,
+  type TableRelation,
+  type TableRelations,
+  type TableSchema,
+  type TableSchemaOptions,
+} from './dataquery.js';
+export {
   AuthError,
   HttpError,
   NavApiError,
@@ -75,6 +99,8 @@ export {
   createClientForProfile,
   createClientForSelector,
   createClientForTarget,
+  createDataQueryClientForSelector,
+  type DataQuerySelector,
   targetLabel,
 } from './factory.js';
 export { BcHttp, type BcHttpOptions, type BcResponse, type RequestOptions } from './http.js';

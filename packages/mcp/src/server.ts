@@ -12,6 +12,9 @@ import {
   type ClientSelector,
   companyLabel,
   createClientForSelector,
+  createDataQueryClientForSelector,
+  type DataQueryClient,
+  type DataQuerySelector,
   defaultConfigDir,
   detectBraider,
   findCompany,
@@ -23,6 +26,8 @@ import { z } from 'zod';
 export interface NavapiServerOptions {
   /** Injectable for tests; defaults to profile-based construction from disk config. */
   clientFactory?: (selector: ClientSelector) => Promise<BcClient>;
+  /** Injectable for tests; defaults to the same resolution rule, with an MCP-audience token. */
+  dataQueryFactory?: (selector: DataQuerySelector) => Promise<DataQueryClient>;
   profileStore?: ProfileStore;
 }
 
@@ -792,6 +797,151 @@ export function createNavapiServer(options: NavapiServerOptions = {}): McpServer
     safe(async ({ profile, company, code, ...sel }) => {
       await (await getBraider({ profile, ...sel })).deleteEndpoint(code, { company });
       return { deleted: true, code };
+    }),
+  );
+
+  // ------------------------------------------------------------ data query
+  //
+  // Business Central's own MCP server (BC 29+) can compile and run an AL
+  // query against any table. navapi reaches it with the profile's identity,
+  // so an agent gets it next to the API tools with no extra connection. The
+  // feature is off by default and Microsoft bills it; these tools only read,
+  // and when it is off the error says where an admin turns it on. There is
+  // deliberately no tool that enables it.
+
+  const dataQueries = new Map<string, Promise<DataQueryClient>>();
+  const dataQueryFactory =
+    options.dataQueryFactory ?? ((sel: DataQuerySelector) => createDataQueryClientForSelector(sel));
+
+  function getDataQuery(selector: DataQuerySelector): Promise<DataQueryClient> {
+    // One MCP session per target, reused across calls.
+    const key = [
+      selector.profile ?? '',
+      selector.credential ?? '',
+      selector.tenant ?? '',
+      selector.environment ?? '',
+      selector.company ?? '',
+      selector.configurationName ?? '',
+    ].join('\u0000');
+    let client = dataQueries.get(key);
+    if (!client) {
+      client = dataQueryFactory(selector);
+      dataQueries.set(key, client);
+      client.catch(() => dataQueries.delete(key));
+    }
+    return client;
+  }
+
+  const dataQueryArgs = {
+    ...profileArg,
+    company: z
+      .string()
+      .optional()
+      .describe('Company name, displayName, or GUID; omit to use the profile default'),
+    mcpConfig: z
+      .string()
+      .optional()
+      .describe(
+        "Business Central MCP configuration with Data Query Tools active; omit for the environment's default configuration",
+      ),
+  };
+  const DATA_QUERY_NOTE =
+    'Uses Business Central Data Query Tools (BC 29+): read-only, works on any table, but must be enabled by an admin and is billed by Microsoft. If it is not enabled, the error explains how — relay that to the user; do not try to enable it.';
+
+  server.registerTool(
+    'find_tables',
+    {
+      description: `Find Business Central tables (not API entity sets) by comma-separated name fragments, or by meaning with semantic=true. Start here when no API page exposes the data you need. ${DATA_QUERY_NOTE}`,
+      inputSchema: {
+        ...dataQueryArgs,
+        searchText: z
+          .string()
+          .describe("Name fragments like 'customer, ledger entry', or a description when semantic"),
+        semantic: z
+          .boolean()
+          .optional()
+          .describe('Natural-language search instead of name matching'),
+        top: z.number().int().min(1).max(50).optional(),
+      },
+    },
+    safe(async ({ company, mcpConfig, searchText, semantic, top, ...sel }) =>
+      (await getDataQuery({ ...sel, company, configurationName: mcpConfig })).findTables(
+        searchText,
+        { semantic, top },
+      ),
+    ),
+  );
+
+  server.registerTool(
+    'get_table_schema',
+    {
+      description: `Fields of a Business Central table: AL field names, types, option values, table relations, and FlowField formulas. Call it for every table before writing a query — field names vary by environment and extensions. ${DATA_QUERY_NOTE}`,
+      inputSchema: {
+        ...dataQueryArgs,
+        table: z.union([z.number().int(), z.string()]).describe('Table ID, or exact table name'),
+        fieldClass: z.enum(['Normal', 'FlowField', 'FlowFilter']).optional(),
+        nameContains: z
+          .array(z.string())
+          .optional()
+          .describe('Only fields whose name contains any of these'),
+      },
+    },
+    safe(async ({ company, mcpConfig, table, fieldClass, nameContains, ...sel }) =>
+      (await getDataQuery({ ...sel, company, configurationName: mcpConfig })).getTableSchema(
+        table,
+        {
+          fieldClass,
+          nameContains,
+        },
+      ),
+    ),
+  );
+
+  server.registerTool(
+    'get_table_relations',
+    {
+      description: `Tables a Business Central table references (outgoing) or that reference it (incoming), with the linking fields — use it to find join paths for a query. ${DATA_QUERY_NOTE}`,
+      inputSchema: {
+        ...dataQueryArgs,
+        table: z.union([z.number().int(), z.string()]).describe('Table ID, or exact table name'),
+        direction: z.enum(['outgoing', 'incoming']).optional().describe('Default outgoing'),
+        relatedTo: z
+          .array(z.number().int())
+          .optional()
+          .describe('Only relations with these table IDs'),
+      },
+    },
+    safe(async ({ company, mcpConfig, table, direction, relatedTo, ...sel }) =>
+      (await getDataQuery({ ...sel, company, configurationName: mcpConfig })).getTableRelations(
+        table,
+        { direction, relatedTo },
+      ),
+    ),
+  );
+
+  server.registerTool(
+    'run_query',
+    {
+      description: `Compile and run an AL query object (e.g. "query 50000 X { elements { dataitem(C; Customer) { column(No; "No.") { } } } }") against Business Central data. Joins (nested dataitems with DataItemLink), filters, and aggregates (Method = Sum/Count/…) are allowed; the query always runs read-only. Rows come back as objects keyed by column name. Compile errors return the AL compiler messages — fix and retry. validateOnly=true compiles without running. ${DATA_QUERY_NOTE}`,
+      inputSchema: {
+        ...dataQueryArgs,
+        queryText: z.string().describe('AL query source'),
+        validateOnly: z.boolean().optional(),
+        top: z.number().int().min(1).max(1000).optional().describe('Rows to return (default 10)'),
+        skip: z.number().int().min(0).optional(),
+      },
+    },
+    safe(async ({ company, mcpConfig, queryText, validateOnly, top, skip, ...sel }) => {
+      const dq = await getDataQuery({ ...sel, company, configurationName: mcpConfig });
+      if (validateOnly) return dq.validateQuery(queryText);
+      const result = await dq.runQuery(queryText, { top, skip });
+      return {
+        totalCount: result.totalCount,
+        returned: result.rows.length,
+        rows: result.rows.map((row) =>
+          Object.fromEntries(result.columns.map((column, i) => [column, row[i]])),
+        ),
+      };
     }),
   );
 

@@ -5,6 +5,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import {
   BcClient,
+  DataQueryClient,
+  type DataQuerySelector,
   MetadataCache,
   ProfileStore,
   parseMetadata,
@@ -166,16 +168,20 @@ describe('navapi MCP server', () => {
       'braider_write',
       'create_record',
       'delete_record',
+      'find_tables',
       'get_entity_schema',
       'get_navigation',
       'get_next_page',
       'get_record',
       'get_records',
+      'get_table_relations',
+      'get_table_schema',
       'invoke_action',
       'invoke_batch',
       'list_entities',
       'list_profiles',
       'list_routes',
+      'run_query',
       'set_default_company',
       'update_record',
     ]);
@@ -671,5 +677,116 @@ describe('navapi MCP server — credential and target selection', () => {
 
     // two distinct tenants built two clients; the repeat reused the first
     expect(seen).toHaveLength(2);
+  });
+});
+
+describe('navapi MCP server — data query tools', () => {
+  /** A BC MCP server fake: SSE replies, tools listed per `enabled`, rows from a 3-row table. */
+  function bcMcpFetch(enabled: boolean): typeof globalThis.fetch {
+    return (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const msg = JSON.parse(String(init?.body));
+      if (msg.method === 'notifications/initialized') return new Response(null, { status: 202 });
+      let result: unknown = {};
+      if (msg.method === 'tools/list') {
+        result = {
+          tools: (enabled
+            ? [
+                'bc_data_find_tables',
+                'bc_data_get_table_schema',
+                'bc_data_get_table_relations',
+                'bc_data_query',
+              ]
+            : ['bc_actions_search']
+          ).map((name) => ({ name })),
+        };
+      } else if (msg.method === 'tools/call') {
+        const { skip, top } = msg.params.arguments;
+        const all = [
+          ['10000', 'Adatum'],
+          ['20000', 'Trey'],
+          ['30000', 'School'],
+        ];
+        const rows = all.slice(skip, skip + top);
+        result = {
+          content: [
+            { type: 'text', text: 'summary' },
+            {
+              type: 'text',
+              text: JSON.stringify({
+                columns: ['No', 'Name'],
+                rows,
+                ...(skip === 0 ? { totalCount: 3 } : {}),
+              }),
+            },
+          ],
+        };
+      }
+      return new Response(`data: ${JSON.stringify({ jsonrpc: '2.0', id: msg.id, result })}\n\n`, {
+        headers: { 'content-type': 'text/event-stream', 'mcp-session-id': 's' },
+      });
+    }) as typeof globalThis.fetch;
+  }
+
+  async function connect(enabled: boolean, seen: DataQuerySelector[] = []) {
+    const server = createNavapiServer({
+      profileStore: new ProfileStore(tmpDir),
+      dataQueryFactory: async (selector) => {
+        seen.push({ ...selector });
+        return new DataQueryClient({
+          auth: new StaticTokenProvider('tok'),
+          target: { tenantId: 'tenant-1', environment: 'Dev', company: 'CRONUS' },
+          fetch: bcMcpFetch(enabled),
+        });
+      },
+    });
+    const client = new Client({ name: 'test-client', version: '0.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    return client;
+  }
+
+  it('returns query rows keyed by column, with the total', async () => {
+    const seen: DataQuerySelector[] = [];
+    const client = await connect(true, seen);
+    const data = parseText(
+      await client.callTool({
+        name: 'run_query',
+        arguments: {
+          queryText: 'query 50000 Q {}',
+          top: 2,
+          environment: 'Dev',
+          company: 'CRONUS',
+          mcpConfig: 'cfg',
+        },
+      }),
+    );
+    expect(data).toEqual({
+      totalCount: 3,
+      returned: 2,
+      rows: [
+        { No: '10000', Name: 'Adatum' },
+        { No: '20000', Name: 'Trey' },
+      ],
+    });
+    // The MCP config name travels as configurationName, not as a stray field.
+    expect(seen).toEqual([{ environment: 'Dev', company: 'CRONUS', configurationName: 'cfg' }]);
+  });
+
+  it('reports a disabled feature as a tool error that says where to enable it', async () => {
+    const client = await connect(false);
+    const result = await client.callTool({
+      name: 'find_tables',
+      arguments: { searchText: 'customer' },
+    });
+    expect(result.isError).toBe(true);
+    const text = (result.content as { text: string }[])[0]?.text ?? '';
+    expect(text).toMatch(/Data Query Tools are not enabled/);
+    expect(text).toContain('?page=8350');
+  });
+
+  it('offers no tool that enables the feature', async () => {
+    const client = await connect(true);
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name).filter((n) => /enable|activate/i.test(n))).toEqual([]);
   });
 });
